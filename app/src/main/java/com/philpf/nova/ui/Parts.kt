@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -138,7 +139,7 @@ fun SheetHeader(title: String, subtitle: String?, art: String?, video: Boolean =
     ) {
         Artwork(art, size = 72.dp, video = video, shape = if (round) CircleShape else RoundedCornerShape(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = GlassType.title, color = glass.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, style = GlassType.display.copy(fontSize = 24.sp, lineHeight = 28.sp), color = glass.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (!subtitle.isNullOrEmpty()) {
                 Text(subtitle, style = GlassType.callout, color = glass.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
@@ -280,5 +281,5 @@ fun PlainIconButton(icon: NovaIcon, label: String, onClick: () -> Unit, tint: Co
 /** Bold section text inside a sheet. */
 @Composable
 fun SheetTitle(text: String) {
-    Text(text, style = GlassType.title.copy(fontWeight = FontWeight.SemiBold), color = LocalGlass.current.textPrimary, modifier = Modifier.padding(vertical = 8.dp))
+    Text(text, style = GlassType.display.copy(fontSize = 26.sp, lineHeight = 30.sp), color = LocalGlass.current.textPrimary, modifier = Modifier.padding(vertical = 8.dp))
 }

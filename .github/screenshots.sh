@@ -45,7 +45,7 @@ shot tracklist-editor-light 6 --es theme light --es open tracklist
 shot settings-light 6 --es theme light --es open settings
 # Playing the long video from its second song: the video in the art's place, the song inside it.
 shot player-video-dark 10 --es theme dark --es play mix --es open player
-adb shell input swipe 540 1900 540 700 400
+adb shell input swipe 540 2000 540 600 400
 sleep 2
 capture player-video-tracklist-dark
 shot player-video-light 10 --es theme light --es play mix --es open player
@@ -55,7 +55,21 @@ sleep 1
 capture fullscreen-controls
 shot player-album-dark 10 --es theme dark --es play album --es open player
 shot player-art-dark 10 --es theme dark --es play mix --es open art
-shot queue-dark 10 --es theme dark --es play album --es open queue
+# Up next, below the player: swipe up for all of it.
+shot player-up-next-dark 10 --es theme dark --es play album --es open player
+adb shell input swipe 540 2000 540 600 400
+sleep 2
+capture player-up-next-dark
+# Swiping the library sideways goes from Songs to Albums.
+shot swipe-tabs-dark 8 --es theme dark
+adb shell input swipe 900 1400 150 1400 250
+sleep 2
+capture swipe-tabs-dark
+# Swiping the mini player to the left: the next song.
+shot mini-player-swiped-dark 10 --es theme dark --es play album
+adb shell input swipe 800 2180 200 2180 200
+sleep 3
+capture mini-player-swiped-dark
 # The mini player over the library.
 shot mini-player-dark 10 --es theme dark --es play album
 

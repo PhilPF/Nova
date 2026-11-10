@@ -1,6 +1,7 @@
 package com.philpf.nova.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -133,6 +134,18 @@ class LibraryTest {
         all = PlaylistOps.delete(all, "p2")
         assertEquals(listOf(Playlist("p1", "Drive", listOf(a))), all)
         assertEquals(mix.chapterTrack(1), library.track(b.mediaId))
+    }
+
+    @Test fun messagingAndHiddenFolders() {
+        assertTrue(FolderFiles.isMessaging("Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Voice Notes/202401", "PTT-20240101-WA0003.opus"))
+        assertTrue(FolderFiles.isMessaging("Telegram/Telegram Audio", "song.mp3"))
+        assertTrue(FolderFiles.isMessaging("Downloads", "AUD-20231224-WA0010.m4a"))
+        assertFalse(FolderFiles.isMessaging("Music/Albums/Signals", "01 Song.mp3"))
+        assertFalse(FolderFiles.isMessaging("Music/Luma - Glass Harbor", "01 Glass Harbor.mp3"))
+        assertTrue(FolderFiles.isHidden("Recordings/2024", listOf("Recordings")))
+        assertTrue(FolderFiles.isHidden("recordings", listOf("Recordings")))
+        assertFalse(FolderFiles.isHidden("Recordings Old", listOf("Recordings")))
+        assertFalse(FolderFiles.isHidden("", listOf("")))
     }
 
     @Test fun folderFiles() {

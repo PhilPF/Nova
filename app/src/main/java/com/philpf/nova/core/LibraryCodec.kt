@@ -104,6 +104,21 @@ object FolderFiles {
             ?: names.firstOrNull { it.equals(mediaName + suffix, ignoreCase = true) }
     }
 
+    private val messagingFolder = Regex("""whatsapp|telegram""", RegexOption.IGNORE_CASE)
+    private val messagingFile = Regex("""^(AUD|PTT|VID)-\d{8}-WA\d+""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Whether a file is a messaging app's audio or video (WhatsApp voice notes and audios,
+     * Telegram's): it is in a folder named after the app, or named as WhatsApp names them
+     * ("PTT-20240101-WA0003.opus").
+     */
+    fun isMessaging(folder: String, fileName: String): Boolean =
+        folder.split('/').any { messagingFolder.containsMatchIn(it) } || messagingFile.containsMatchIn(fileName)
+
+    /** Whether [folder] is one of [hidden] or inside one of them. */
+    fun isHidden(folder: String, hidden: Collection<String>): Boolean =
+        hidden.any { h -> h.isNotEmpty() && (folder.equals(h, ignoreCase = true) || folder.startsWith("$h/", ignoreCase = true)) }
+
     /** The folder's picture, by the usual names ("cover.jpg", "folder.png", ...). */
     fun cover(names: Collection<String>): String? {
         val images = names.filter { extension(it) in imageExtensions }

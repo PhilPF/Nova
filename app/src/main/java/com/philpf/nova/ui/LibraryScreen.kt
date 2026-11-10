@@ -1,6 +1,14 @@
 package com.philpf.nova.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,9 +77,11 @@ class LibraryActions(
 )
 
 /**
- * The library page: the songs in the music folders by song, album or artist, and the
- * playlists, those made by the user and those read from long videos.
+ * The library page: the songs in the music folder by song, album or artist, and the
+ * playlists, those made by the user and those read from long videos. Swipe sideways (or tap
+ * the tabs) to go from one to the next; the search applies to the page shown.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LibraryContent(
     library: Library,
@@ -80,7 +90,7 @@ fun LibraryContent(
     onTab: (LibraryTab) -> Unit,
     query: TextFieldValue,
     onQuery: (TextFieldValue) -> Unit,
-    hasFolders: Boolean,
+    hasFolder: Boolean,
     progress: ScanProgress?,
     playingId: String?,
     backdrop: Backdrop,
@@ -88,81 +98,91 @@ fun LibraryContent(
     bottomSpace: androidx.compose.ui.unit.Dp,
 ) {
     val glass = LocalGlass.current
-    val listState = rememberLazyListState()
     val q = query.text.trim()
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 14.dp),
-    ) {
-        item(key = "top") {
-            Column {
-                Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-                Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Nova", style = GlassType.largeTitle, color = glass.textPrimary)
-                        val status = when {
-                            progress != null && progress.total > 0 -> "Reading ${progress.done} of ${progress.total} files…"
-                            progress != null -> "Looking for music…"
-                            library.files.isNotEmpty() -> "${library.files.size} songs and videos"
-                            else -> null
-                        }
-                        if (status != null) Text(status, style = GlassType.caption, color = glass.textTertiary)
-                    }
-                    GlassIconButton(onClick = actions.openSettings, label = "Settings") {
-                        Icon(NovaIcon.GEAR, glass.textPrimary, Modifier.size(22.dp))
-                    }
+    val pager = rememberPagerState(initialPage = tab.ordinal) { LibraryTab.entries.size }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(pager.currentPage) { onTab(LibraryTab.entries[pager.currentPage]) }
+    LaunchedEffect(tab) { if (pager.currentPage != tab.ordinal && !pager.isScrollInProgress) pager.scrollToPage(tab.ordinal) }
+
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(horizontal = 14.dp)) {
+            Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+            Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(NovaIcon.STAR, glass.textPrimary, Modifier.size(26.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Nova", style = GlassType.display.copy(fontSize = 36.sp, lineHeight = 40.sp), color = glass.textPrimary, modifier = Modifier.weight(1f))
+                if (progress != null) {
+                    Text(
+                        if (progress.total > 0) "${progress.done} / ${progress.total}" else "Scanning…",
+                        style = GlassType.caption,
+                        color = glass.textTertiary,
+                        modifier = Modifier.padding(end = 10.dp),
+                    )
                 }
-                SegmentedControl(
-                    options = LibraryTab.entries.map { it.label },
-                    selectedIndex = tab.ordinal,
-                    onSelect = { onTab(LibraryTab.entries[it]) },
-                )
-                Spacer(Modifier.height(10.dp))
-                if (tab != LibraryTab.PLAYLISTS && library.files.isNotEmpty()) {
-                    GlassTextField(value = query, onValueChange = onQuery, placeholder = "Search")
-                    Spacer(Modifier.height(10.dp))
+                GlassIconButton(onClick = actions.openSettings, label = "Settings") {
+                    Icon(NovaIcon.GEAR, glass.textPrimary, Modifier.size(22.dp))
                 }
+            }
+            SegmentedControl(
+                options = LibraryTab.entries.map { it.label },
+                selectedIndex = pager.currentPage,
+                onSelect = { scope.launch { pager.animateScrollToPage(it) } },
+                position = { pager.currentPage + pager.currentPageOffsetFraction },
+            )
+            Spacer(Modifier.height(10.dp))
+            if (library.files.isNotEmpty()) {
+                GlassTextField(value = query, onValueChange = onQuery, placeholder = "Search")
+                Spacer(Modifier.height(6.dp))
             }
         }
 
         if (library.files.isEmpty()) {
-            item(key = "empty") { EmptyLibrary(hasFolders, progress != null, backdrop, actions.chooseFolder) }
-        } else {
-            when (tab) {
-                LibraryTab.SONGS -> {
-                    val songs = if (q.isEmpty()) library.songs else library.search(q)
-                    if (songs.isEmpty()) item { NothingFound(q) }
-                    items(songs, key = { "s" + it.mediaId }) { t ->
-                        TrackRow(t, playing = t.mediaId == playingId, onClick = { actions.playTracks(songs, songs.indexOf(t)) }, onMore = { actions.openTrack(t) })
-                    }
-                }
-                LibraryTab.ALBUMS -> {
-                    val albums = library.albums.filter { q.isEmpty() || it.title.contains(q, true) || it.artist?.contains(q, true) == true }
-                    if (albums.isEmpty()) item { NothingFound(q, if (q.isEmpty()) "No album tags in these files yet." else null) }
-                    items(albums.chunked(2), key = { "a" + it.first().key }) { pair ->
-                        Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            for (album in pair) AlbumCard(album, backdrop, { actions.openAlbum(album) }, Modifier.weight(1f))
-                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+            Column(Modifier.padding(horizontal = 14.dp)) { EmptyLibrary(hasFolder, progress != null, backdrop, actions.chooseFolder) }
+            return@Column
+        }
+        HorizontalPager(state = pager, modifier = Modifier.weight(1f), beyondViewportPageCount = 1) { page ->
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp)) {
+                when (LibraryTab.entries[page]) {
+                    LibraryTab.SONGS -> {
+                        val songs = if (q.isEmpty()) library.songs else library.search(q)
+                        if (songs.isEmpty()) item { NothingFound(q) }
+                        items(songs, key = { "s" + it.mediaId }) { t ->
+                            TrackRow(t, playing = t.mediaId == playingId, onClick = { actions.playTracks(songs, songs.indexOf(t)) }, onMore = { actions.openTrack(t) })
                         }
                     }
+                    LibraryTab.ALBUMS -> {
+                        val albums = library.albums.filter { q.isEmpty() || it.title.contains(q, true) || it.artist?.contains(q, true) == true }
+                        if (albums.isEmpty()) item { NothingFound(q, if (q.isEmpty()) "No album tags in these files yet." else null) }
+                        items(albums.chunked(2), key = { "a" + it.first().key }) { pair ->
+                            Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                for (album in pair) AlbumCard(album, backdrop, { actions.openAlbum(album) }, Modifier.weight(1f))
+                                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    LibraryTab.ARTISTS -> {
+                        val artists = library.artists.filter { q.isEmpty() || it.name.contains(q, true) }
+                        if (artists.isEmpty()) item { NothingFound(q) }
+                        items(artists, key = { "r" + it.name }) { a -> ArtistRow(a) { actions.openArtist(a) } }
+                    }
+                    LibraryTab.PLAYLISTS -> playlistItems(
+                        library,
+                        playlists.filter { q.isEmpty() || it.name.contains(q, true) },
+                        library.mixes.filter { q.isEmpty() || it.title.contains(q, true) },
+                        backdrop,
+                        actions,
+                    )
                 }
-                LibraryTab.ARTISTS -> {
-                    val artists = library.artists.filter { q.isEmpty() || it.name.contains(q, true) }
-                    if (artists.isEmpty()) item { NothingFound(q) }
-                    items(artists, key = { "r" + it.name }) { a -> ArtistRow(a) { actions.openArtist(a) } }
+                item(key = "bottom") {
+                    Spacer(Modifier.height(bottomSpace))
+                    Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
                 }
-                LibraryTab.PLAYLISTS -> playlistItems(library, playlists, backdrop, actions)
             }
-        }
-        item(key = "bottom") {
-            Spacer(Modifier.height(bottomSpace))
-            Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
         }
     }
 }
 
-private fun LazyListScope.playlistItems(library: Library, playlists: List<Playlist>, backdrop: Backdrop, actions: LibraryActions) {
+private fun LazyListScope.playlistItems(library: Library, playlists: List<Playlist>, mixes: List<MediaFile>, backdrop: Backdrop, actions: LibraryActions) {
     item(key = "new") {
         Row(Modifier.padding(bottom = 12.dp)) {
             GlassButton(
@@ -180,7 +200,7 @@ private fun LazyListScope.playlistItems(library: Library, playlists: List<Playli
         }
     }
     item(key = "mixes") { SectionLabel("From videos", Modifier.padding(top = 14.dp)) }
-    if (library.mixes.isEmpty()) {
+    if (mixes.isEmpty()) {
         item(key = "nomix") {
             Text(
                 "Long videos with a tracklist show up here, a song per chapter. Nova reads chapters " +
@@ -192,7 +212,7 @@ private fun LazyListScope.playlistItems(library: Library, playlists: List<Playli
             )
         }
     }
-    items(library.mixes, key = { "m" + it.id }) { f ->
+    items(mixes, key = { "m" + it.id }) { f ->
         CollectionCard(f.title, "${songCount(f.chapters.size)} · ${originLabel(f.chapterOrigin)}", f.art, f.isVideo, backdrop) { actions.openMix(f) }
     }
 }
@@ -275,7 +295,7 @@ private fun NothingFound(query: String, text: String? = null) {
 }
 
 @Composable
-private fun EmptyLibrary(hasFolders: Boolean, scanning: Boolean, backdrop: Backdrop, onChoose: () -> Unit) {
+private fun EmptyLibrary(hasFolder: Boolean, scanning: Boolean, backdrop: Backdrop, onChoose: () -> Unit) {
     val glass = LocalGlass.current
     GlassSurface(backdrop, Modifier.fillMaxWidth().padding(top = 18.dp), shape = RoundedCornerShape(28.dp)) {
         Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -283,15 +303,15 @@ private fun EmptyLibrary(hasFolders: Boolean, scanning: Boolean, backdrop: Backd
             Text(
                 when {
                     scanning -> "Looking for music…"
-                    hasFolders -> "No songs or videos found"
+                    hasFolder -> "No songs or videos found"
                     else -> "Choose your music folder"
                 },
                 style = GlassType.title,
                 color = glass.textPrimary,
             )
             Text(
-                if (hasFolders) {
-                    "Nova plays the songs and videos in the folders you chose and their subfolders. Add another folder, or put music in them and rescan from Settings."
+                if (hasFolder) {
+                    "Nova plays the songs and videos in the folder you chose and its subfolders. Choose another folder, or put music in it and rescan from Settings."
                 } else {
                     "Nova plays the songs and videos you have downloaded. Choose the folder they are in: Nova reads it and all its subfolders, and only it."
                 },
@@ -301,7 +321,7 @@ private fun EmptyLibrary(hasFolders: Boolean, scanning: Boolean, backdrop: Backd
             Spacer(Modifier.height(4.dp))
             Row {
                 GlassButton(
-                    text = if (hasFolders) "Add a folder" else "Choose folder",
+                    text = if (hasFolder) "Choose another folder" else "Choose folder",
                     onClick = onChoose,
                     primary = true,
                     icon = { Icon(NovaIcon.FOLDER, contentColorOn(glass.accent), Modifier.size(18.dp)) },

@@ -14,9 +14,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.philpf.nova.R
 
 /**
  * The flat "liquid glass" look in one theme: frosted panels over a colourful backdrop. From the
@@ -109,7 +113,26 @@ object GlassType {
     val callout: TextStyle @Composable @ReadOnlyComposable get() = styles().callout
     val caption: TextStyle @Composable @ReadOnlyComposable get() = styles().caption
     val section: TextStyle @Composable @ReadOnlyComposable get() = styles().section
+
+    /**
+     * The serif for names that stand out: the app's name, the song playing, the names of albums,
+     * artists and playlists. Newsreader (SIL Open Font License), close to Tiempos Headline;
+     * [Headline] is the family to change for another.
+     */
+    val display: TextStyle @Composable @ReadOnlyComposable get() = DisplayStyle
 }
+
+/** Newsreader at its largest optical size (drawn for headlines), medium weight. */
+@OptIn(ExperimentalTextApi::class)
+val Headline = FontFamily(
+    Font(
+        R.font.newsreader,
+        weight = FontWeight.Medium,
+        variationSettings = FontVariation.Settings(FontVariation.weight(500), FontVariation.Setting("opsz", 72f)),
+    ),
+)
+
+private val DisplayStyle = TextStyle(fontFamily = Headline, fontWeight = FontWeight.Medium, fontSize = 30.sp, lineHeight = 34.sp, letterSpacing = (-0.2).sp)
 
 private class TypeScale(family: FontFamily) {
     val largeTitle = TextStyle(fontFamily = family, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp)

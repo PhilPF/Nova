@@ -193,6 +193,8 @@ fun SongMenu(
     onArtist: () -> Unit,
     onTracklist: (() -> Unit)?,
     onRemoveFromPlaylist: (() -> Unit)?,
+    hideFolder: String? = null,
+    onHideFolder: () -> Unit = {},
 ) {
     val sub = listOfNotNull(track.artist, if (track.chapterIndex >= 0) "in ${track.file.title}" else track.album).joinToString(" · ")
     SheetHeader(track.title, sub, track.file.art, track.file.isVideo)
@@ -204,6 +206,7 @@ fun SongMenu(
     if (hasArtist) ActionRow(NovaIcon.STAR, "Go to artist", onArtist)
     if (onTracklist != null) ActionRow(NovaIcon.LIST, if (track.file.isMix) "Tracklist…" else "Add a tracklist…", onTracklist)
     if (onRemoveFromPlaylist != null) ActionRow(NovaIcon.DELETE, "Remove from this playlist", onRemoveFromPlaylist, danger = true)
+    if (hideFolder != null) ActionRow(NovaIcon.FOLDER, "Hide the folder “${hideFolder.substringAfterLast('/')}”", onHideFolder)
 }
 
 @Composable
@@ -276,57 +279,43 @@ fun TracklistEditor(file: MediaFile, isManual: Boolean, onSave: (List<com.philpf
 }
 
 @Composable
-fun QueueSheet(state: PlayerState, onSkip: (Int) -> Unit, onRemove: (Int) -> Unit) {
-    val glass = LocalGlass.current
-    SheetTitle("Up next")
-    if (state.queue.isEmpty()) Text("Nothing in the queue.", style = GlassType.body, color = glass.textSecondary)
-    state.queue.forEachIndexed { i, item ->
-        val current = i == state.index
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (current) glass.controlFillSelected else androidx.compose.ui.graphics.Color.Transparent)
-                .clickable { onSkip(i) }
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(item.title, style = GlassType.body, color = if (current) glass.accent else glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (item.artist != null) Text(item.artist, style = GlassType.caption, color = glass.textSecondary, maxLines = 1)
-            }
-            if (!current) PlainIconButton(NovaIcon.CLOSE, "Remove", { onRemove(i) }, glass.textTertiary, size = 36.dp, iconSize = 16.dp)
-        }
-    }
-}
-
-@Composable
 fun SettingsSheet(
-    folders: List<Pair<String, String>>,
-    demo: Boolean,
+    folderName: String?,
+    hiddenFolders: List<String>,
+    skipMessaging: Boolean,
     scanning: Boolean,
     theme: ThemeMode,
     showVideo: Boolean,
-    onAddFolder: () -> Unit,
-    onRemoveFolder: (String) -> Unit,
+    onChangeFolder: () -> Unit,
+    onShowFolder: (String) -> Unit,
+    onSkipMessaging: (Boolean) -> Unit,
     onRescan: () -> Unit,
     onTheme: (ThemeMode) -> Unit,
     onShowVideo: (Boolean) -> Unit,
 ) {
     val glass = LocalGlass.current
     SheetTitle("Settings")
-    SectionLabel("Music folders", Modifier.padding(top = 4.dp))
-    if (demo) Text("Sample library (debug build).", style = GlassType.callout, color = glass.textSecondary, modifier = Modifier.padding(6.dp))
-    folders.forEach { (uri, name) ->
-        Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(NovaIcon.FOLDER, glass.textSecondary, Modifier.size(20.dp))
-            Text(name, style = GlassType.body, color = glass.textPrimary, modifier = Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-            PlainIconButton(NovaIcon.CLOSE, "Remove $name", { onRemoveFolder(uri) }, glass.textTertiary, size = 40.dp, iconSize = 18.dp)
-        }
+    SectionLabel("Music folder", Modifier.padding(top = 4.dp))
+    Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(NovaIcon.FOLDER, glass.textSecondary, Modifier.size(20.dp))
+        Text(folderName ?: "None chosen yet", style = GlassType.body, color = glass.textPrimary, modifier = Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
     Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        GlassButton("Add folder", onAddFolder, icon = { Icon(NovaIcon.ADD, glass.textPrimary, Modifier.size(18.dp)) })
+        GlassButton(if (folderName == null) "Choose folder" else "Change folder", onChangeFolder, icon = { Icon(NovaIcon.FOLDER, glass.textPrimary, Modifier.size(18.dp)) })
         GlassButton(if (scanning) "Scanning…" else "Rescan", onRescan, enabled = !scanning, icon = { Icon(NovaIcon.REFRESH, glass.textPrimary, Modifier.size(18.dp)) })
+    }
+
+    SectionLabel("Left out", Modifier.padding(top = 12.dp))
+    SettingRow("WhatsApp and Telegram audio") { GlassSwitch(skipMessaging, onSkipMessaging, "Leave out WhatsApp and Telegram audio") }
+    if (hiddenFolders.isEmpty()) {
+        Text("Hide a folder from the menu of one of its songs.", style = GlassType.caption, color = glass.textTertiary, modifier = Modifier.padding(horizontal = 16.dp))
+    }
+    hiddenFolders.forEach { path ->
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(path, style = GlassType.body, color = glass.textSecondary, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            GlassButton("Show", { onShowFolder(path) })
+        }
+        Spacer(Modifier.height(6.dp))
     }
 
     SectionLabel("Appearance", Modifier.padding(top = 12.dp))

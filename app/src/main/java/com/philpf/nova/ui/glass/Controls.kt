@@ -61,6 +61,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.philpf.nova.ui.theme.GlassType
 import com.philpf.nova.ui.theme.LocalGlass
@@ -242,7 +243,11 @@ fun GlassChip(
     }
 }
 
-/** Capsule segmented control; a lighter pill slides to the selected option (none while [selectedIndex] is -1). */
+/**
+ * Capsule segmented control; a lighter pill slides to the selected option (none while
+ * [selectedIndex] is -1). [position], when given, places the pill instead, as a fractional
+ * index, so it can follow a page being swiped.
+ */
 @Composable
 fun SegmentedControl(
     options: List<String>,
@@ -250,9 +255,10 @@ fun SegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    position: (() -> Float)? = null,
 ) {
     val glass = LocalGlass.current
-    val position by animateFloatAsState(selectedIndex.coerceAtLeast(0).toFloat(), tween(240), label = "segment")
+    val animated by animateFloatAsState(selectedIndex.coerceAtLeast(0).toFloat(), tween(240), label = "segment")
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -266,7 +272,7 @@ fun SegmentedControl(
         if (selectedIndex >= 0) {
             Box(
                 Modifier
-                    .offset(x = segment * position)
+                    .offset { IntOffset((segment * (position?.invoke() ?: animated)).roundToPx(), 0) }
                     .width(segment)
                     .fillMaxHeight()
                     .clip(CircleShape)

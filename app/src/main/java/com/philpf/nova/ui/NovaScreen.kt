@@ -61,7 +61,6 @@ sealed interface Sheet {
     data class AddTo(val tracks: List<Track>, val title: String) : Sheet
     data class Tracklist(val fileId: String) : Sheet
     data object NewPlaylist : Sheet
-    data object Queue : Sheet
     data object Settings : Sheet
 }
 
@@ -78,7 +77,7 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
     val library by app.library.library.collectAsState()
     val progress by app.library.progress.collectAsState()
     val playlists by app.playlists.playlists.collectAsState()
-    val folders by app.settings.folders.collectAsState()
+    val folder by app.settings.folder.collectAsState()
     val showVideo by app.settings.showVideo.collectAsState()
     val state = connection.state
 
@@ -118,7 +117,7 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
     LaunchedEffect(state.mediaId, videoShown) { if (!videoShown || state.mediaId == null) fullscreen = Fullscreen.OFF }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) app.library.addFolder(uri)
+        if (uri != null) app.library.setFolder(uri)
     }
 
     // The debug build's screenshots: play something and open a screen once the library is in.
@@ -152,11 +151,6 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
                 "tracklist" -> mix?.let { open(Sheet.Tracklist(it.id)) }
                 "settings" -> open(Sheet.Settings)
                 "menu" -> library.songs.firstOrNull()?.let { open(Sheet.Song(it)) }
-                "queue" -> {
-                    playerOpen = true
-                    delay(400)
-                    open(Sheet.Queue)
-                }
             }
         }
     }
@@ -199,7 +193,7 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
                         onTab = { tab = it },
                         query = query,
                         onQuery = { query = it },
-                        hasFolders = folders.isNotEmpty() || app.demoDir != null,
+                        hasFolder = folder != null || app.demoDir != null,
                         progress = progress,
                         playingId = state.mediaId,
                         backdrop = libBackground,
@@ -231,7 +225,6 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
                     onShowVideo = app.settings::setShowVideo,
                     onClose = { playerOpen = false },
                     onFullscreen = { fullscreen = Fullscreen.BUTTON },
-                    onQueue = { open(Sheet.Queue) },
                     onMore = { open(Sheet.Song(it)) },
                     onEditTracklist = { open(Sheet.Tracklist(it.id)) },
                 )
@@ -359,6 +352,13 @@ private fun SheetContent(
                         open(Sheet.PlaylistOf(id))
                     }
                 },
+                // Leaves a folder out (voice notes, recordings); Settings brings it back.
+                hideFolder = t.file.folder.takeIf { it.isNotEmpty() && app.demoDir == null },
+                onHideFolder = {
+                    app.settings.hideFolder(t.file.folder)
+                    close()
+                    notify("Hid “${t.file.folder.substringAfterLast('/')}”. Settings shows it again.")
+                },
             )
         }
         is Sheet.AddTo -> AddToPlaylistSheet(
@@ -386,20 +386,23 @@ private fun SheetContent(
                 notify(if (chapters == null) "Using the file's own tracklist" else if (chapters.isEmpty()) "Tracklist turned off" else "Tracklist saved")
             }
         }
-        Sheet.Queue -> QueueSheet(connection.state, { connection.skipTo(it) }, { connection.removeAt(it) })
         Sheet.Settings -> {
-            val folders by app.settings.folders.collectAsState()
+            val folder by app.settings.folder.collectAsState()
+            val hidden by app.settings.hiddenFolders.collectAsState()
+            val skipMessaging by app.settings.skipMessaging.collectAsState()
             val theme by app.settings.theme.collectAsState()
             val showVideo by app.settings.showVideo.collectAsState()
             val progress by app.library.progress.collectAsState()
             SettingsSheet(
-                folders = folders.map { it to DocumentTree.displayName(it) },
-                demo = app.demoDir != null,
+                folderName = if (app.demoDir != null) "Sample library (debug build)" else folder?.let { DocumentTree.displayName(it) },
+                hiddenFolders = hidden,
+                skipMessaging = skipMessaging,
                 scanning = progress != null,
                 theme = theme,
                 showVideo = showVideo,
-                onAddFolder = pickFolder,
-                onRemoveFolder = app.library::removeFolder,
+                onChangeFolder = pickFolder,
+                onShowFolder = app.settings::showFolder,
+                onSkipMessaging = app.settings::setSkipMessaging,
                 onRescan = app.library::rescan,
                 onTheme = app.settings::setTheme,
                 onShowVideo = app.settings::setShowVideo,
@@ -408,13 +411,17 @@ private fun SheetContent(
     }
 }
 
-/** The song playing, floating over the library: tap it for the player. */
+/**
+ * The song playing, floating over the library: tap it (or swipe it up) for the player, swipe
+ * it sideways for the next or previous song.
+ */
 @Composable
 private fun MiniPlayer(connection: PlayerConnection, track: Track, backdrop: Backdrop, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val glass = LocalGlass.current
     val state = connection.state
     val position = rememberPosition(connection, active = !track.isClip && track.file.isMix, intervalMs = 1000)
     val now = NowPlaying(track, position, state.durationMs)
+    val swipe = rememberSkipSwipe(onNext = { connection.next() }, onPrevious = { connection.previous() })
     GlassSurface(
         backdrop = backdrop,
         modifier = modifier
@@ -422,12 +429,14 @@ private fun MiniPlayer(connection: PlayerConnection, track: Track, backdrop: Bac
             .padding(horizontal = 12.dp)
             .padding(bottom = 12.dp)
             .fillMaxWidth()
-            .height(MiniPlayerHeight),
+            .height(MiniPlayerHeight)
+            .skipGesture(swipe)
+            .swipeUpGesture(onOpen),
         shape = RoundedCornerShape(26.dp),
         onClick = onOpen,
     ) {
         Row(
-            Modifier.fillMaxSize().padding(horizontal = 8.dp),
+            Modifier.fillMaxSize().skipOffset(swipe).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {

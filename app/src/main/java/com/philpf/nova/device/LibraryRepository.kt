@@ -6,6 +6,7 @@ import android.net.Uri
 import com.philpf.nova.core.Chapter
 import com.philpf.nova.core.ChapterOrigin
 import com.philpf.nova.core.Chapters
+import com.philpf.nova.core.FolderFiles
 import com.philpf.nova.core.Library
 import com.philpf.nova.core.LibraryCodec
 import com.philpf.nova.core.ManualChaptersCodec
@@ -17,6 +18,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
@@ -26,8 +29,9 @@ data class ScanProgress(val done: Int, val total: Int)
 
 /**
  * The library: loaded from the last scan when the app starts, then rescanned from the music
- * folders. Tracklists entered in the app are kept apart and laid over the scanned files, so
- * editing one needs no rescan and removing it brings back the file's own.
+ * folder. Tracklists entered in the app are kept apart and laid over the scanned files, so
+ * editing one needs no rescan and removing it brings back the file's own. Hidden folders and
+ * messaging apps' audio are left out the same way, so they come back without a rescan.
  */
 class LibraryRepository(
     private val context: Context,
@@ -63,6 +67,9 @@ class LibraryRepository(
             _loaded.value = true
             rescan()
         }
+        scope.launch {
+            combine(settings.hiddenFolders, settings.skipMessaging) { _, _ -> }.drop(1).collect { publish() }
+        }
     }
 
     suspend fun awaitLoaded(): Library {
@@ -76,7 +83,7 @@ class LibraryRepository(
             val trees: List<MediaTree> = if (demoDir != null) {
                 listOf(FileTree(demoDir))
             } else {
-                settings.folders.value.map { DocumentTree(context, it) }
+                listOfNotNull(settings.folder.value).map { DocumentTree(context, it) }
             }
             _progress.value = ScanProgress(0, 0)
             try {
@@ -90,16 +97,19 @@ class LibraryRepository(
         }
     }
 
-    /** Keeps the permission to read a folder picked with ACTION_OPEN_DOCUMENT_TREE, and scans it. */
-    fun addFolder(uri: Uri) {
+    /**
+     * Makes a folder picked with ACTION_OPEN_DOCUMENT_TREE the music folder, keeping the
+     * permission to read it (and giving up the previous folder's), and scans it.
+     */
+    fun setFolder(uri: Uri) {
+        val old = settings.folder.value
         runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-        settings.setFolders(settings.folders.value + uri.toString())
-        rescan()
-    }
-
-    fun removeFolder(uri: String) {
-        runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-        settings.setFolders(settings.folders.value - uri)
+        if (old != null && old != uri.toString()) {
+            runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            // Hidden subfolders were paths inside the old folder.
+            settings.setHidden(emptyList())
+        }
+        settings.setFolder(uri.toString())
         rescan()
     }
 
@@ -116,7 +126,12 @@ class LibraryRepository(
     fun ownChapters(fileId: String): List<Chapter> = scanned.firstOrNull { it.id == fileId }?.chapters.orEmpty()
 
     private fun publish() {
-        val files = scanned.map { f ->
+        val hidden = settings.hiddenFolders.value
+        val skipMessaging = settings.skipMessaging.value
+        val shown = scanned.filter { f ->
+            !FolderFiles.isHidden(f.folder, hidden) && !(skipMessaging && FolderFiles.isMessaging(f.folder, f.fileName))
+        }
+        val files = shown.map { f ->
             val m = manual[f.id] ?: return@map f
             f.copy(chapters = Chapters.normalize(m, f.durationMs), chapterOrigin = ChapterOrigin.MANUAL)
         }
