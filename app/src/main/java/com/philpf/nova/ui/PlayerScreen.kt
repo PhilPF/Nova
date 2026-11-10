@@ -201,8 +201,8 @@ fun PlayerScreen(
                                 Icon(NovaIcon.QUEUE, glass.textPrimary, Modifier.size(22.dp))
                             }
                         }
-                        Spacer(Modifier.height(20.dp))
-
+                    },
+                    middle = {
                         // The picture, or the video in its place; swipe it sideways to skip.
                         val video = state.hasVideo && showVideo && videoAllowed
                         val aspect = if (video) videoAspect(state) else 1f
@@ -303,24 +303,34 @@ fun PlayerScreen(
 }
 
 /**
- * [top] at the top and [bottom] at the bottom of at least [minHeight]: the player's controls
- * sit at the foot of the screen, with the next panel just below the fold.
+ * [top] at the top, [bottom] at the bottom of at least [minHeight], and [middle] centred in
+ * the space between: the player's controls sit at the foot of the screen, with the next panel
+ * just below the fold, and the picture in the middle of what is left.
  */
 @Composable
-private fun SplitColumn(minHeight: Dp, top: @Composable ColumnScope.() -> Unit, bottom: @Composable ColumnScope.() -> Unit) {
+private fun SplitColumn(
+    minHeight: Dp,
+    top: @Composable ColumnScope.() -> Unit,
+    middle: @Composable ColumnScope.() -> Unit,
+    bottom: @Composable ColumnScope.() -> Unit,
+) {
     Layout(
         contents = listOf<@Composable () -> Unit>(
             { Column(horizontalAlignment = Alignment.CenterHorizontally, content = top) },
+            { Column(horizontalAlignment = Alignment.CenterHorizontally, content = middle) },
             { Column(horizontalAlignment = Alignment.CenterHorizontally, content = bottom) },
         ),
         modifier = Modifier.fillMaxWidth(),
-    ) { (topPart, bottomPart), constraints ->
+    ) { (topPart, middlePart, bottomPart), constraints ->
         val each = constraints.copy(minWidth = constraints.maxWidth, minHeight = 0, maxHeight = Constraints.Infinity)
         val t = topPart.first().measure(each)
+        val m = middlePart.first().measure(each)
         val b = bottomPart.first().measure(each)
-        val height = maxOf(minHeight.roundToPx(), t.height + b.height)
+        val gap = 16.dp.roundToPx()
+        val height = maxOf(minHeight.roundToPx(), t.height + m.height + b.height + 2 * gap)
         layout(constraints.maxWidth, height) {
             t.place(0, 0)
+            m.place(0, t.height + (height - t.height - b.height - m.height) / 2)
             b.place(0, height - b.height)
         }
     }
