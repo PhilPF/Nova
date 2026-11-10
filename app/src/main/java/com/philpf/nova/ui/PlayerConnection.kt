@@ -33,8 +33,10 @@ data class PlayerState(
     val queue: List<QueueItem> = emptyList(),
     val index: Int = -1,
     val videoSize: VideoSize = VideoSize.UNKNOWN,
+    /** Whether the current item has a video track (known before any frame is drawn). */
+    val hasVideoTrack: Boolean = false,
 ) {
-    val hasVideo: Boolean get() = videoSize.width > 0 && videoSize.height > 0
+    val hasVideo: Boolean get() = hasVideoTrack || (videoSize.width > 0 && videoSize.height > 0)
 }
 
 @Immutable
@@ -94,6 +96,7 @@ class PlayerConnection(private val context: Context) {
             queue = queue,
             index = c.currentMediaItemIndex,
             videoSize = c.videoSize,
+            hasVideoTrack = c.currentTracks.containsType(C.TRACK_TYPE_VIDEO),
         )
     }
 

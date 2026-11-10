@@ -315,6 +315,8 @@ private fun SheetContent(
                 positionInPlaying = { connection.position() },
                 onPlayFrom = { start -> play(listOf(f.wholeTrack), 0, false, start) },
                 onMore = { open(Sheet.Song(it)) },
+                // The video's songs, each as a clip of it, in random order.
+                onShuffle = { play(f.chapterTracks, 0, true, 0) },
                 onSaveAsPlaylist = {
                     app.playlists.create(f.title, f.chapterTracks)
                     close()
@@ -345,7 +347,12 @@ private fun SheetContent(
                 onAddToPlaylist = { open(Sheet.AddTo(listOf(t), t.title)) },
                 onAlbum = { album?.let { open(Sheet.AlbumOf(it.key)) } },
                 onArtist = { artist?.let { open(Sheet.ArtistOf(it.name)) } },
-                onTracklist = if (!t.isClip || t.chapterIndex >= 0) ({ open(Sheet.Tracklist(t.file.id)) }) else null,
+                // Tracklists are for videos and long recordings, not for ordinary songs.
+                onTracklist = if ((!t.isClip || t.chapterIndex >= 0) && (t.file.isVideo || t.file.isMix || t.file.durationMs >= 15 * 60_000)) {
+                    { open(Sheet.Tracklist(t.file.id)) }
+                } else {
+                    null
+                },
                 onRemoveFromPlaylist = sheet.playlistId?.let { id ->
                     {
                         app.playlists.removeAt(id, sheet.index)

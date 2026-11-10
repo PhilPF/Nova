@@ -5,6 +5,8 @@ PACKAGE=com.philpf.nova
 adb install -r Nova.apk
 mkdir -p screenshots
 adb shell settings put global hide_error_dialogs 1
+# No "Viewing full screen" tip over the full-screen shots.
+adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell input keyevent KEYCODE_HOME
 sleep 8
 

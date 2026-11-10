@@ -146,15 +146,13 @@ fun MixSheet(
     positionInPlaying: () -> Long,
     onPlayFrom: (Long) -> Unit,
     onMore: (Track) -> Unit,
+    onShuffle: () -> Unit,
     onSaveAsPlaylist: () -> Unit,
     onEdit: () -> Unit,
 ) {
     val glass = LocalGlass.current
     SheetHeader(file.title, listOfNotNull(file.artist, "${songCount(file.chapters.size)} · ${originLabel(file.chapterOrigin)}").joinToString(" · "), file.art, file.isVideo)
-    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        GlassButton("Play", { onPlayFrom(0) }, Modifier.weight(1f), primary = true, icon = { Icon(NovaIcon.PLAY, contentColorOn(glass.accent), Modifier.size(18.dp)) })
-        GlassButton("Save as playlist", onSaveAsPlaylist, Modifier.weight(1f), icon = { Icon(NovaIcon.PLAYLIST_ADD, glass.textPrimary, Modifier.size(18.dp)) })
-    }
+    PlayShuffleRow({ onPlayFrom(0) }, onShuffle)
     val current = if (playingId == file.id) Chapters.indexAt(file.chapters, positionInPlaying()) else -1
     file.chapterTracks.forEachIndexed { i, t ->
         Row(
@@ -177,6 +175,7 @@ fun MixSheet(
         }
     }
     Spacer(Modifier.height(8.dp))
+    ActionRow(NovaIcon.PLAYLIST_ADD, "Save as a playlist", onSaveAsPlaylist)
     ActionRow(NovaIcon.EDIT, "Edit tracklist", onEdit)
 }
 
