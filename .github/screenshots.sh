@@ -26,9 +26,10 @@ shot() {
 }
 
 # The sample library goes into the app's own files (run-as works for debug builds).
+# Piped as a tar stream, as the app may not read the shell's folders itself.
 adb push demo /data/local/tmp/nova-demo
-adb shell chmod -R a+rX /data/local/tmp/nova-demo
-adb shell "run-as $PACKAGE sh -c 'mkdir -p files/Demo && cp -r /data/local/tmp/nova-demo/. files/Demo/ && ls -R files/Demo'"
+adb shell "tar -cf - -C /data/local/tmp/nova-demo . | run-as $PACKAGE sh -c 'mkdir -p files/Demo && tar -xf - -C files/Demo'"
+adb shell "run-as $PACKAGE ls -R files/Demo"
 shot library-dark 20 --es theme dark
 shot library-light 6 --es theme light
 shot albums-dark 6 --es theme dark --es tab albums
