@@ -1,6 +1,5 @@
 package com.philpf.nova.ui
 
-import androidx.annotation.OptIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -230,7 +229,7 @@ fun SeekBar(
 }
 
 /** The player's video, fitted inside its space with black bars. Only one may be shown at a time. */
-@OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun VideoSurface(player: Player?, modifier: Modifier = Modifier) {
     AndroidView(
