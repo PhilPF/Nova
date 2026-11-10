@@ -10,7 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,12 +71,18 @@ object ArtCache {
     }
 }
 
+/**
+ * The picture at [path], decoded at about [sizePx]. While a new picture loads, the previous one
+ * stays (rather than a blank), so changing songs does not flash.
+ */
 @Composable
 fun rememberArt(path: String?, sizePx: Int): ImageBitmap? {
-    val bitmap by produceState(initialValue = path?.let { ArtCache.cached(it, sizePx) }, path, sizePx) {
-        value = path?.let { ArtCache.load(it, sizePx) }
+    var bitmap by remember { mutableStateOf(path?.let { ArtCache.cached(it, sizePx) }) }
+    LaunchedEffect(path, sizePx) {
+        val cached = path?.let { ArtCache.cached(it, sizePx) }
+        bitmap = cached ?: path?.let { ArtCache.load(it, sizePx) }
     }
-    return bitmap?.asImageBitmap()
+    return remember(bitmap) { bitmap?.asImageBitmap() }
 }
 
 @Composable

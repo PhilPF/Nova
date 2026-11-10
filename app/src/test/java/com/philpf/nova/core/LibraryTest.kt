@@ -171,3 +171,54 @@ class ArtColorsTest {
         assertEquals(emptyList<Int>(), ArtColors.dominant(IntArray(10) { grey }))
     }
 }
+
+class TracklistOrderTest {
+    @Test fun detectsTitleFirstFromKnownArtists() {
+        val lines = listOf("Glass Harbor - Luma", "Afterglow - Neon Fields", "Paper Moons - Orbital Kids")
+        assertEquals(NameOrder.TITLE_FIRST, TrackNames.detectOrder(lines, listOf("Luma", "Neon Fields")))
+        assertEquals(NameOrder.ARTIST_FIRST, TrackNames.detectOrder(lines.map { l -> l.split(" - ").reversed().joinToString(" - ") }, listOf("Luma")))
+    }
+
+    @Test fun detectsTitleFirstFromRepeats() {
+        // Unknown artists: the side that repeats is the artist's.
+        val lines = listOf("Song One - Ava", "Song Two - Ava", "Song Three - Bo", "Song Four - Bo")
+        assertEquals(NameOrder.TITLE_FIRST, TrackNames.detectOrder(lines))
+        assertEquals(NameOrder.ARTIST_FIRST, TrackNames.detectOrder(listOf("A - x", "B - y")))
+        assertEquals(NameOrder.ARTIST_FIRST, TrackNames.detectOrder(listOf("No separator", "here")))
+    }
+
+    @Test fun collaborationsCountAsKnown() {
+        val lines = listOf("Night Song - Luma & Sera Vale", "Day Song - Kai")
+        assertEquals(NameOrder.TITLE_FIRST, TrackNames.detectOrder(lines, listOf("Luma", "Kai")))
+    }
+
+    @Test fun manualTracklistGivesEachSongItsArtist() {
+        val text = "0:00 First - Ava\n2:00 Second\n4:00 Third - Bo"
+        assertEquals(
+            listOf(Chapter(0, "First", "Ava"), Chapter(120_000, "Second", "The Band"), Chapter(240_000, "Third", "Bo")),
+            Tracklists.fromText(text, NameOrder.TITLE_FIRST, "The Band", 600_000),
+        )
+        assertEquals(Chapter(0, "Ava", "First"), Tracklists.fromText(text, NameOrder.ARTIST_FIRST, null, 600_000)[0])
+        assertEquals(Chapter(120_000, "Second", null), Tracklists.fromText(text, NameOrder.ARTIST_FIRST, " ", 600_000)[1])
+    }
+
+    @Test fun orderedSwapsOnlyUntaggedChapters() {
+        val chapters = listOf(Chapter(0, "Glass Harbor - Luma"), Chapter(1000, "Afterglow - Neon Fields"), Chapter(2000, "Kept", "Someone"))
+        assertEquals(
+            listOf(Chapter(0, "Glass Harbor", "Luma"), Chapter(1000, "Afterglow", "Neon Fields"), Chapter(2000, "Kept", "Someone")),
+            Tracklists.ordered(chapters, listOf("Luma", "Neon Fields")),
+        )
+        val usual = listOf(Chapter(0, "Luma - Glass Harbor"), Chapter(1000, "Neon Fields - Afterglow"))
+        assertEquals(usual, Tracklists.ordered(usual, listOf("Luma")))
+    }
+
+    @Test fun fileEdits() {
+        val f = MediaFile("id", "v.mp4", "", "v", null, null, null, null, null, null, 1000, true)
+        val e = FileEdits.of(f, " Real Title ", "Real Artist", "")
+        assertEquals(FileEdits("Real Title", "Real Artist", null), e)
+        assertEquals("Real Artist", e.applyTo(f).artist)
+        assertTrue(FileEdits.of(f, "v", "", "").isEmpty)
+        val map = mapOf("id" to e)
+        assertEquals(map, FileEditsCodec.decode(FileEditsCodec.encode(map)))
+    }
+}

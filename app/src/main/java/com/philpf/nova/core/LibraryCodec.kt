@@ -48,8 +48,11 @@ object LibraryCodec {
         }
     }
 
-    /** Raise when what a scan records changes, so older caches are read again from the files. */
-    const val VERSION = 1
+    /**
+     * Raise when what a scan records changes, so older caches are read again from the files.
+     * 2: pictures cached at 1024 px (were 640).
+     */
+    const val VERSION = 2
 }
 
 /** Tracklists entered in the app, by file id. An empty list turns a file's chapters off. */

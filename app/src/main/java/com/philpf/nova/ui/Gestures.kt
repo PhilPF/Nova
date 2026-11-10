@@ -22,14 +22,18 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
  * Swiping a song sideways: to the left for the next, to the right for the previous. The song
- * follows the finger; let go past a quarter of the width (or flicked) and it slides out while
- * the next one slides in, else it springs back.
+ * follows the finger; let go past a quarter of the width (or flicked) and it slides out, and
+ * the next one slides in once it is there ([key], the song shown, has changed), so the old one
+ * is never seen coming back. With nothing that way ([canNext], [canPrevious]) it springs back.
  */
 @Stable
 class SkipSwipe internal constructor(private val scope: CoroutineScope) {
@@ -37,6 +41,9 @@ class SkipSwipe internal constructor(private val scope: CoroutineScope) {
     private var raw = 0f
     internal var onNext: () -> Unit = {}
     internal var onPrevious: () -> Unit = {}
+    internal var canNext: () -> Boolean = { true }
+    internal var canPrevious: () -> Boolean = { true }
+    internal var key: () -> Any? = { null }
 
     internal fun drag(delta: Float) {
         raw += delta
@@ -44,35 +51,44 @@ class SkipSwipe internal constructor(private val scope: CoroutineScope) {
     }
 
     internal fun release(width: Float, velocity: Float = 0f) {
-        val goNext = raw < -width * 0.25f || (velocity < -1200f && raw < 0)
-        val goPrevious = raw > width * 0.25f || (velocity > 1200f && raw > 0)
+        val goNext = (raw < -width * 0.25f || (velocity < -1200f && raw < 0)) && canNext()
+        val goPrevious = (raw > width * 0.25f || (velocity > 1200f && raw > 0)) && canPrevious()
         raw = 0f
         scope.launch {
             when {
-                goNext -> {
-                    offset.animateTo(-width, tween(150))
-                    onNext()
-                    offset.snapTo(width * 0.5f)
-                    offset.animateTo(0f, tween(220))
-                }
-                goPrevious -> {
-                    offset.animateTo(width, tween(150))
-                    onPrevious()
-                    offset.snapTo(-width * 0.5f)
-                    offset.animateTo(0f, tween(220))
-                }
+                goNext -> skip(-width, onNext)
+                goPrevious -> skip(width, onPrevious)
                 else -> offset.animateTo(0f, tween(200))
             }
         }
     }
+
+    private suspend fun skip(out: Float, action: () -> Unit) {
+        val before = key()
+        offset.animateTo(out, tween(140))
+        action()
+        // The new song, or after a while whatever is there.
+        withTimeoutOrNull(900) { snapshotFlow { key() }.first { it != before } }
+        offset.snapTo(-out * 0.45f)
+        offset.animateTo(0f, tween(240))
+    }
 }
 
 @Composable
-fun rememberSkipSwipe(onNext: () -> Unit, onPrevious: () -> Unit): SkipSwipe {
+fun rememberSkipSwipe(
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    key: () -> Any? = { null },
+    canNext: () -> Boolean = { true },
+    canPrevious: () -> Boolean = { true },
+): SkipSwipe {
     val scope = rememberCoroutineScope()
     val swipe = remember { SkipSwipe(scope) }
     swipe.onNext = onNext
     swipe.onPrevious = onPrevious
+    swipe.key = key
+    swipe.canNext = canNext
+    swipe.canPrevious = canPrevious
     return swipe
 }
 

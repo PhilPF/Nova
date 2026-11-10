@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.philpf.nova.NovaApp
+import com.philpf.nova.core.Chapters
 import com.philpf.nova.core.Library
 import com.philpf.nova.core.Track
 import com.philpf.nova.device.DocumentTree
@@ -60,6 +61,8 @@ sealed interface Sheet {
     data class Song(val track: Track, val playlistId: String? = null, val index: Int = -1) : Sheet
     data class AddTo(val tracks: List<Track>, val title: String) : Sheet
     data class Tracklist(val fileId: String) : Sheet
+    /** A file's title, artist and album, set in the app. */
+    data class Details(val fileId: String) : Sheet
     data object NewPlaylist : Sheet
     data object Settings : Sheet
 }
@@ -80,6 +83,10 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
     val folder by app.settings.folder.collectAsState()
     val showVideo by app.settings.showVideo.collectAsState()
     val state = connection.state
+    // Next and Previous move between the songs of a long video, by the library's tracklists.
+    connection.chaptersOf = remember(library) {
+        { item -> library.track(item.mediaId)?.takeIf { !it.isClip }?.file?.chapters.orEmpty() }
+    }
 
     var tab by rememberSaveable { mutableStateOf(LibraryTab.SONGS) }
     var query by remember { mutableStateOf(TextFieldValue("")) }
@@ -151,6 +158,7 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
                 "tracklist" -> mix?.let { open(Sheet.Tracklist(it.id)) }
                 "settings" -> open(Sheet.Settings)
                 "menu" -> library.songs.firstOrNull()?.let { open(Sheet.Song(it)) }
+                "details" -> library.files.firstOrNull { it.isVideo && !it.isMix }?.let { open(Sheet.Details(it.id)) }
             }
         }
     }
@@ -353,6 +361,7 @@ private fun SheetContent(
                     }
                 },
                 // Leaves a folder out (voice notes, recordings); Settings brings it back.
+                onDetails = { open(Sheet.Details(t.file.id)) },
                 hideFolder = t.file.folder.takeIf { it.isNotEmpty() && app.demoDir == null },
                 onHideFolder = {
                     app.settings.hideFolder(t.file.folder)
@@ -379,8 +388,17 @@ private fun SheetContent(
             val id = app.playlists.create(name)
             open(Sheet.PlaylistOf(id))
         }
+        is Sheet.Details -> library.file(sheet.fileId)?.let { f ->
+            val original = app.library.original(f.id) ?: f
+            DetailsEditor(f, original, hasEdits = app.library.edits(f.id) != null) { edits ->
+                app.library.setEdits(f.id, edits)
+                close()
+                notify(if (edits == null) "Using the file's own details" else "Details saved")
+            }
+        }
         is Sheet.Tracklist -> library.file(sheet.fileId)?.let { f ->
-            TracklistEditor(f, app.library.hasManualTracklist(f.id)) { chapters ->
+            val known = remember(library) { library.files.filter { !it.isMix }.mapNotNull { it.artist }.toSet() }
+            TracklistEditor(f, app.library.hasManualTracklist(f.id), known) { chapters ->
                 app.library.setTracklist(f.id, chapters)
                 close()
                 notify(if (chapters == null) "Using the file's own tracklist" else if (chapters.isEmpty()) "Tracklist turned off" else "Tracklist saved")
@@ -419,9 +437,14 @@ private fun SheetContent(
 private fun MiniPlayer(connection: PlayerConnection, track: Track, backdrop: Backdrop, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val glass = LocalGlass.current
     val state = connection.state
-    val position = rememberPosition(connection, active = !track.isClip && track.file.isMix, intervalMs = 1000)
-    val now = NowPlaying(track, position, state.durationMs)
-    val swipe = rememberSkipSwipe(onNext = { connection.next() }, onPrevious = { connection.previous() })
+    val positionState = rememberPositionState(connection, active = !track.isClip && track.file.isMix, intervalMs = 1000)
+    val now = NowPlaying(track, positionState.longValue, state.durationMs)
+    val swipe = rememberSkipSwipe(
+        onNext = { connection.next() },
+        onPrevious = { connection.previous() },
+        key = { connection.state.mediaId to Chapters.indexAt(now.chapters, positionState.longValue) },
+        canNext = { connection.canNext() },
+    )
     GlassSurface(
         backdrop = backdrop,
         modifier = modifier

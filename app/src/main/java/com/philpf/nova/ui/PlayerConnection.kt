@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
@@ -14,6 +15,8 @@ import androidx.media3.common.VideoSize
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import com.philpf.nova.core.Chapter
+import com.philpf.nova.core.ChapterNav
 import com.philpf.nova.core.Track
 import com.philpf.nova.service.MediaItems
 import com.philpf.nova.service.PlaybackService
@@ -50,6 +53,10 @@ class PlayerConnection(private val context: Context) {
     var controller by mutableStateOf<MediaController?>(null)
         private set
     var state by mutableStateOf(PlayerState())
+        private set
+
+    /** Changes with every seek made here, so the position shown is read again at once. */
+    var seeks by mutableIntStateOf(0)
         private set
 
     private var future: ListenableFuture<MediaController>? = null
@@ -132,11 +139,57 @@ class PlayerConnection(private val context: Context) {
         }
     }
 
-    fun next() = controller?.seekToNext()
+    /**
+     * The songs of the item playing, when it is a whole long video (set by the screen, which
+     * has the library). Next and Previous work them out here, by the rule the service uses for
+     * the notification and headphones ([ChapterNav]), and seek to them directly: a
+     * MediaController guesses the outcome of its own seekToNext as "the next item of the
+     * queue" and shows it until the service answers, which made the screen jump to the wrong
+     * song and back.
+     */
+    var chaptersOf: (MediaItem) -> List<Chapter> = { emptyList() }
 
-    fun previous() = controller?.seekToPrevious()
+    private fun currentChapters(): List<Chapter> {
+        val item = controller?.currentMediaItem ?: return emptyList()
+        if (item.clippingConfiguration != MediaItem.ClippingConfiguration.UNSET) return emptyList()
+        return chaptersOf(item)
+    }
 
-    fun seekTo(ms: Long) = controller?.seekTo(ms)
+    /** Whether Next goes anywhere: a later song in this video, or a later item. */
+    fun canNext(): Boolean {
+        val c = controller ?: return false
+        return ChapterNav.next(currentChapters(), c.currentPosition) != null || c.hasNextMediaItem()
+    }
+
+    fun next() {
+        seeks++
+        val c = controller ?: return
+        val target = ChapterNav.next(currentChapters(), c.currentPosition)
+        when {
+            target != null -> c.seekTo(target)
+            c.hasNextMediaItem() -> c.seekToNextMediaItem()
+            // The last song of the queue: Next does nothing rather than restart something.
+        }
+    }
+
+    fun previous() {
+        seeks++
+        val c = controller ?: return
+        val chapters = currentChapters()
+        val position = c.currentPosition
+        val target = ChapterNav.previous(chapters, position)
+        when {
+            target != null -> c.seekTo(target)
+            position > ChapterNav.RESTART_MS -> c.seekTo(0)
+            c.hasPreviousMediaItem() -> c.seekToPreviousMediaItem()
+            else -> c.seekTo(0)
+        }
+    }
+
+    fun seekTo(ms: Long) {
+        seeks++
+        controller?.seekTo(ms)
+    }
 
     fun skipTo(index: Int) {
         val c = controller ?: return

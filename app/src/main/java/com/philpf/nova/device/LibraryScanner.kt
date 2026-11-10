@@ -218,7 +218,7 @@ class LibraryScanner(private val context: Context, private val artDir: File) {
     }
 
     companion object {
-        const val ART_SIZE = 640
+        const val ART_SIZE = 1024
 
         fun sha1(s: String): String =
             MessageDigest.getInstance("SHA-1").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }

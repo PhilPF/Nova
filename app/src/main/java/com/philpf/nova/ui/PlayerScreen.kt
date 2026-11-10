@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,6 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableLongState
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -99,15 +101,31 @@ class NowPlaying(val track: Track, val positionMs: Long, val durationMs: Long) {
 
 /** The position of the player, read a few times a second while [active]. */
 @Composable
-fun rememberPosition(connection: PlayerConnection, active: Boolean, intervalMs: Long = 250): Long {
-    var position by remember { mutableLongStateOf(connection.position()) }
-    LaunchedEffect(active, connection.controller) {
+fun rememberPosition(connection: PlayerConnection, active: Boolean, intervalMs: Long = 250): Long =
+    rememberPositionState(connection, active, intervalMs).longValue
+
+/** The same as state, for what reads it later (a gesture waiting for the song to change). */
+@Composable
+fun rememberPositionState(connection: PlayerConnection, active: Boolean, intervalMs: Long = 250): MutableLongState {
+    val position = remember { mutableLongStateOf(connection.position()) }
+    LaunchedEffect(active, connection.controller, connection.seeks) {
         while (active) {
-            position = connection.position()
+            position.longValue = connection.position()
             delay(intervalMs)
         }
     }
     return position
+}
+
+/** The height of the title, the position and the buttons under the picture. */
+private val BottomBlockHeight = 236.dp
+
+/** The pictures of the songs before and after, decoded ahead so a skip shows them at once. */
+private suspend fun preloadNeighbours(state: PlayerState, library: Library) {
+    for (i in listOf(state.index + 1, state.index - 1)) {
+        val art = state.queue.getOrNull(i)?.let { library.track(it.mediaId)?.file?.art } ?: continue
+        ArtCache.load(art, 1000)
+    }
 }
 
 /**
@@ -132,7 +150,8 @@ fun PlayerScreen(
     val glass = LocalGlass.current
     val state = connection.state
     val track = state.mediaId?.let { library.track(it) }
-    val position = rememberPosition(connection, active = true)
+    val positionState = rememberPositionState(connection, active = true)
+    val position = positionState.longValue
     val now = track?.let { NowPlaying(it, position, state.durationMs) }
     val art = track?.file?.art
     val colors = rememberArtColors(art)
@@ -140,7 +159,14 @@ fun PlayerScreen(
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val pull = rememberPullToClose(onClose)
-    val swipe = rememberSkipSwipe(onNext = { connection.next() }, onPrevious = { connection.previous() })
+    // The song shown: changes when the item does, or the song inside a long video.
+    val swipe = rememberSkipSwipe(
+        onNext = { connection.next() },
+        onPrevious = { connection.previous() },
+        key = { connection.state.mediaId to Chapters.indexAt(now?.chapters.orEmpty(), positionState.longValue) },
+        canNext = { connection.canNext() },
+    )
+    LaunchedEffect(state.index, state.queue) { preloadNeighbours(state, library) }
 
     // Touches stop here, rather than reaching the library underneath.
     Box(
@@ -169,33 +195,34 @@ fun PlayerScreen(
         }
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val insets = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
-                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            val peek = 84.dp
-            val pageHeight = maxHeight - peek - WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            // The picture is as large as the page leaves room for, at most 520 dp.
-            val artMax = (maxHeight - insets - 480.dp).coerceIn(180.dp, 520.dp)
-            val panelMin = maxHeight - insets - 120.dp
+            val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            val peek = 76.dp
+            val pageHeight = maxHeight - peek - bottomInset
+            // The picture: a square as wide as the page (less a small margin), unless the page is
+            // too short for it and the controls; the same for every song, so nothing moves.
+            val artSize = minOf(maxWidth - 32.dp, pageHeight - top - 64.dp - BottomBlockHeight - 24.dp, 560.dp).coerceAtLeast(160.dp)
+            val panelMin = maxHeight - top - bottomInset - 120.dp
 
             Column(
                 Modifier
                     .fillMaxSize()
                     .nestedScroll(pull)
                     .verticalScroll(scroll)
-                    .padding(horizontal = 22.dp),
+                    .padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 SplitColumn(
                     minHeight = pageHeight,
                     top = {
                         Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             GlassIconButton(onClick = onClose, label = "Close the player") { Icon(NovaIcon.CHEVRON_DOWN, glass.textPrimary, Modifier.size(26.dp)) }
                             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                                 val from = if (now?.chapterTrack != null) "PLAYING FROM A VIDEO" else if (track?.album != null) "PLAYING FROM" else "NOW PLAYING"
                                 Text(from, style = GlassType.section, color = glass.textTertiary)
                                 val source = if (now?.chapterTrack != null) now.track.file.title else track?.album
-                                if (source != null) Text(source, style = GlassType.callout, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(source ?: "", style = GlassType.callout, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             GlassIconButton(onClick = { scope.launch { scroll.animateScrollTo(scroll.maxValue) } }, label = "Up next") {
                                 Icon(NovaIcon.QUEUE, glass.textPrimary, Modifier.size(22.dp))
@@ -203,86 +230,94 @@ fun PlayerScreen(
                         }
                     },
                     middle = {
-                        // The picture, or the video in its place; swipe it sideways to skip.
+                        // The picture, or the video in its place (centred in the same square, at its
+                        // own shape); swipe it sideways to skip.
+                        val isVideoFile = track?.file?.isVideo == true
                         val video = state.hasVideo && showVideo && videoAllowed
-                        val aspect = if (video) videoAspect(state) else 1f
-                        Box(
-                            Modifier
-                                .widthIn(max = if (video) 520.dp else artMax)
-                                .fillMaxWidth()
-                                .aspectRatio(aspect)
-                                .skipOffset(swipe, move = !video)
-                                .clip(RoundedCornerShape(28.dp)),
-                        ) {
-                            Crossfade(targetState = video, label = "media") { showingVideo ->
-                                if (showingVideo) {
-                                    VideoSurface(connection.controller, Modifier.fillMaxSize())
-                                } else {
-                                    Artwork(art, Modifier.fillMaxSize(), size = 520.dp, shape = RoundedCornerShape(28.dp), video = track?.file?.isVideo == true, sizePx = 900)
+                        Box(Modifier.size(artSize), contentAlignment = Alignment.Center) {
+                            Box(
+                                Modifier
+                                    .then(
+                                        when {
+                                            !video -> Modifier.fillMaxSize()
+                                            videoAspect(state) >= 1f -> Modifier.fillMaxWidth().aspectRatio(videoAspect(state))
+                                            else -> Modifier.fillMaxHeight().aspectRatio(videoAspect(state))
+                                        },
+                                    )
+                                    .skipOffset(swipe, move = !video)
+                                    .clip(RoundedCornerShape(28.dp)),
+                            ) {
+                                Crossfade(targetState = video, label = "media") { showingVideo ->
+                                    if (showingVideo) {
+                                        VideoSurface(connection.controller, Modifier.fillMaxSize())
+                                    } else {
+                                        Artwork(art, Modifier.fillMaxSize(), size = artSize, shape = RoundedCornerShape(28.dp), video = isVideoFile, sizePx = 1000)
+                                    }
                                 }
-                            }
-                            // Over the video too, which would otherwise take the touches.
-                            Box(Modifier.matchParentSize().skipGesture(swipe))
-                            if (video) {
-                                Box(Modifier.align(Alignment.BottomEnd).padding(10.dp)) {
-                                    GlassIconButton(onClick = onFullscreen, label = "Full screen") { Icon(NovaIcon.FULLSCREEN, Color.White, Modifier.size(24.dp)) }
+                                // Over the video too, which would otherwise take the touches.
+                                Box(Modifier.matchParentSize().skipGesture(swipe))
+                                // A video's own buttons, in its corner: art or video, and full screen.
+                                if (isVideoFile && videoAllowed) {
+                                    Row(Modifier.align(Alignment.BottomEnd).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        GlassIconButton(onClick = { onShowVideo(!showVideo) }, label = if (showVideo) "Show the art" else "Show the video", size = 38.dp) {
+                                            Icon(if (showVideo) NovaIcon.IMAGE else NovaIcon.VIDEO, Color.White, Modifier.size(18.dp))
+                                        }
+                                        GlassIconButton(onClick = onFullscreen, label = "Full screen", size = 38.dp) {
+                                            Icon(NovaIcon.FULLSCREEN, Color.White, Modifier.size(20.dp))
+                                        }
+                                    }
                                 }
                             }
                         }
                     },
                     bottom = {
-                        Spacer(Modifier.height(20.dp))
-                        // Title and artist; inside a long video, the song playing.
-                        Row(Modifier.fillMaxWidth().skipOffset(swipe).skipGesture(swipe), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(now?.title ?: "Nothing playing", style = GlassType.display, color = glass.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(now?.artist ?: "", style = GlassType.headline, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (now?.chapterTrack != null) {
-                                    Text("Song ${now.chapterIndex + 1} of ${now.chapters.size}", style = GlassType.caption, color = glass.textTertiary)
+                        Column(Modifier.height(BottomBlockHeight).padding(horizontal = 6.dp), verticalArrangement = Arrangement.Bottom) {
+                            // Title and artist (inside a long video, the song playing), always on the
+                            // same lines: one for each, and one kept for "Song 2 of 6".
+                            Row(Modifier.fillMaxWidth().skipOffset(swipe).skipGesture(swipe), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(now?.title ?: "Nothing playing", style = GlassType.display, color = glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(now?.artist ?: "", style = GlassType.headline, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        if (now?.chapterTrack != null) "Song ${now.chapterIndex + 1} of ${now.chapters.size}" else "",
+                                        style = GlassType.caption,
+                                        color = glass.textTertiary,
+                                        maxLines = 1,
+                                    )
+                                }
+                                if (track != null) {
+                                    GlassIconButton(onClick = { onMore(now?.chapterTrack ?: track) }, label = "More") { Icon(NovaIcon.MORE, glass.textPrimary, Modifier.size(22.dp)) }
                                 }
                             }
-                            if (track != null) {
-                                GlassIconButton(onClick = { onMore(now?.chapterTrack ?: track) }, label = "More") { Icon(NovaIcon.MORE, glass.textPrimary, Modifier.size(22.dp)) }
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(10.dp))
 
-                        SeekBar(
-                            positionMs = position,
-                            durationMs = state.durationMs,
-                            markers = now?.chapters?.map { it.startMs }.orEmpty(),
-                            onSeek = { connection.seekTo(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(Modifier.height(8.dp))
-
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            PlainIconButton(NovaIcon.SHUFFLE, "Shuffle", { connection.toggleShuffle() }, if (state.shuffle) glass.accent else glass.textSecondary)
-                            PlainIconButton(NovaIcon.PREVIOUS, "Previous", { connection.previous() }, glass.textPrimary, size = 60.dp, iconSize = 36.dp)
-                            PlayButton(state.playWhenReady, { connection.togglePlay() })
-                            PlainIconButton(NovaIcon.NEXT, "Next", { connection.next() }, glass.textPrimary, size = 60.dp, iconSize = 36.dp)
-                            PlainIconButton(
-                                if (state.repeat == Player.REPEAT_MODE_ONE) NovaIcon.REPEAT_ONE else NovaIcon.REPEAT,
-                                when (state.repeat) {
-                                    Player.REPEAT_MODE_OFF -> "Repeat: off"
-                                    Player.REPEAT_MODE_ALL -> "Repeat: all"
-                                    else -> "Repeat: this song"
-                                },
-                                { connection.cycleRepeat() },
-                                if (state.repeat != Player.REPEAT_MODE_OFF) glass.accent else glass.textSecondary,
+                            SeekBar(
+                                positionMs = position,
+                                durationMs = state.durationMs,
+                                markers = now?.chapters?.map { it.startMs }.orEmpty(),
+                                onSeek = { connection.seekTo(it) },
+                                modifier = Modifier.fillMaxWidth(),
                             )
-                        }
+                            Spacer(Modifier.height(6.dp))
 
-                        // For videos: picture or video, and full screen.
-                        if (track?.file?.isVideo == true && videoAllowed) {
-                            Spacer(Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                GlassChip(text = "Video", selected = showVideo, onClick = { onShowVideo(true) }, leading = { Icon(NovaIcon.VIDEO, glass.textPrimary, Modifier.size(16.dp)) })
-                                GlassChip(text = "Art", selected = !showVideo, onClick = { onShowVideo(false) }, leading = { Icon(NovaIcon.IMAGE, glass.textPrimary, Modifier.size(16.dp)) })
-                                GlassChip(text = "Full screen", selected = false, onClick = onFullscreen, leading = { Icon(NovaIcon.FULLSCREEN, glass.textPrimary, Modifier.size(16.dp)) })
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                PlainIconButton(NovaIcon.SHUFFLE, "Shuffle", { connection.toggleShuffle() }, if (state.shuffle) glass.accent else glass.textSecondary)
+                                PlainIconButton(NovaIcon.PREVIOUS, "Previous", { connection.previous() }, glass.textPrimary, size = 60.dp, iconSize = 36.dp)
+                                PlayButton(state.playWhenReady, { connection.togglePlay() })
+                                PlainIconButton(NovaIcon.NEXT, "Next", { connection.next() }, glass.textPrimary, size = 60.dp, iconSize = 36.dp)
+                                PlainIconButton(
+                                    if (state.repeat == Player.REPEAT_MODE_ONE) NovaIcon.REPEAT_ONE else NovaIcon.REPEAT,
+                                    when (state.repeat) {
+                                        Player.REPEAT_MODE_OFF -> "Repeat: off"
+                                        Player.REPEAT_MODE_ALL -> "Repeat: all"
+                                        else -> "Repeat: this song"
+                                    },
+                                    { connection.cycleRepeat() },
+                                    if (state.repeat != Player.REPEAT_MODE_OFF) glass.accent else glass.textSecondary,
+                                )
                             }
+                            Spacer(Modifier.height(12.dp))
                         }
-                        Spacer(Modifier.height(18.dp))
                     },
                 )
 

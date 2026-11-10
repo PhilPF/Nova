@@ -9,6 +9,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,9 +110,7 @@ fun LibraryContent(
         Column(Modifier.padding(horizontal = 14.dp)) {
             Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
             Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(NovaIcon.STAR, glass.textPrimary, Modifier.size(26.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("Nova", style = GlassType.display.copy(fontSize = 36.sp, lineHeight = 40.sp), color = glass.textPrimary, modifier = Modifier.weight(1f))
+                Wordmark(Modifier.weight(1f))
                 if (progress != null) {
                     Text(
                         if (progress.total > 0) "${progress.done} / ${progress.total}" else "Scanning…",
@@ -179,6 +179,40 @@ fun LibraryContent(
                 }
             }
         }
+    }
+}
+
+/** Newsreader's capitals are 0.715 em tall over the baseline. */
+private const val CAP_HEIGHT_EM = 0.715f
+
+/**
+ * The star and "Nova". The star is centred on the capitals (half the cap height over the
+ * baseline), not on the text's box, which also holds room for descenders; its points reach a
+ * little past the capitals, which reads as the same height.
+ */
+@Composable
+private fun Wordmark(modifier: Modifier = Modifier) {
+    val glass = LocalGlass.current
+    val density = LocalDensity.current
+    val size = 36.sp
+    val capPx = with(density) { size.toPx() } * CAP_HEIGHT_EM
+    // The star fills 20 of the icon's 24 units.
+    val star = with(density) { (size * (CAP_HEIGHT_EM * 1.12f * 24f / 20f)).toDp() }
+    Row(modifier) {
+        Icon(
+            NovaIcon.STAR,
+            glass.textPrimary,
+            Modifier
+                .size(star)
+                .alignBy { it.measuredHeight / 2 + (capPx / 2f).roundToInt() },
+        )
+        Spacer(Modifier.width(with(density) { (size * 0.18f).toDp() }))
+        Text(
+            "Nova",
+            style = GlassType.display.copy(fontSize = size, lineHeight = 40.sp),
+            color = glass.textPrimary,
+            modifier = Modifier.alignByBaseline(),
+        )
     }
 }
 

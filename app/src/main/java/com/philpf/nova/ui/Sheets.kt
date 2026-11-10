@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
@@ -30,6 +31,10 @@ import androidx.compose.ui.unit.dp
 import com.philpf.nova.core.Album
 import com.philpf.nova.core.Artist
 import com.philpf.nova.core.Chapters
+import com.philpf.nova.core.FileEdits
+import com.philpf.nova.core.NameOrder
+import com.philpf.nova.core.TrackNames
+import com.philpf.nova.core.Tracklists
 import com.philpf.nova.core.MediaFile
 import com.philpf.nova.core.Playlist
 import com.philpf.nova.core.TimestampText
@@ -193,6 +198,7 @@ fun SongMenu(
     onArtist: () -> Unit,
     onTracklist: (() -> Unit)?,
     onRemoveFromPlaylist: (() -> Unit)?,
+    onDetails: () -> Unit = {},
     hideFolder: String? = null,
     onHideFolder: () -> Unit = {},
 ) {
@@ -204,6 +210,8 @@ fun SongMenu(
     ActionRow(NovaIcon.PLAYLIST_ADD, "Add to playlist…", onAddToPlaylist)
     if (hasAlbum) ActionRow(NovaIcon.NOTE, "Go to album", onAlbum)
     if (hasArtist) ActionRow(NovaIcon.STAR, "Go to artist", onArtist)
+    // A song inside a video is named by the tracklist; the file itself by its details.
+    if (track.chapterIndex < 0) ActionRow(NovaIcon.EDIT, "Edit details…", onDetails)
     if (onTracklist != null) ActionRow(NovaIcon.LIST, if (track.file.isMix) "Tracklist…" else "Add a tracklist…", onTracklist)
     if (onRemoveFromPlaylist != null) ActionRow(NovaIcon.DELETE, "Remove from this playlist", onRemoveFromPlaylist, danger = true)
     if (hideFolder != null) ActionRow(NovaIcon.FOLDER, "Hide the folder “${hideFolder.substringAfterLast('/')}”", onHideFolder)
@@ -231,14 +239,60 @@ fun NewPlaylistSheet(onCreate: (String) -> Unit) {
 }
 
 /**
- * The tracklist of a file, as text: one song per line with its start time. Pasting a YouTube
- * description or comment works, as only the lines with a time are read.
+ * A file's title, artist and album, set in the app over its tags: for files whose tags cannot
+ * be edited elsewhere, or that have none ("Unknown artist"). The tags stay as they are.
  */
 @Composable
-fun TracklistEditor(file: MediaFile, isManual: Boolean, onSave: (List<com.philpf.nova.core.Chapter>?) -> Unit) {
+fun DetailsEditor(file: MediaFile, original: MediaFile, hasEdits: Boolean, onSave: (FileEdits?) -> Unit) {
+    val glass = LocalGlass.current
+    var title by remember(file.id) { mutableStateOf(TextFieldValue(file.title)) }
+    var artist by remember(file.id) { mutableStateOf(TextFieldValue(file.artist.orEmpty())) }
+    var album by remember(file.id) { mutableStateOf(TextFieldValue(file.album.orEmpty())) }
+    SheetTitle("Details")
+    Text(file.fileName, style = GlassType.caption, color = glass.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Spacer(Modifier.height(12.dp))
+    SectionLabel("Title")
+    GlassTextField(title, { title = it }, original.title)
+    Spacer(Modifier.height(10.dp))
+    SectionLabel("Artist")
+    GlassTextField(artist, { artist = it }, original.artist ?: "Unknown artist")
+    Spacer(Modifier.height(10.dp))
+    SectionLabel("Album")
+    GlassTextField(album, { album = it }, original.album ?: "None")
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "Kept in Nova; the file is not changed. A long video's songs take this artist when its tracklist names none.",
+        style = GlassType.caption,
+        color = glass.textTertiary,
+    )
+    Spacer(Modifier.height(12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        GlassButton("Save", { onSave(FileEdits.of(original, title.text, artist.text, album.text)) }, primary = true)
+        if (hasEdits) GlassButton("Use the file's own", { onSave(null) })
+    }
+}
+
+/**
+ * The tracklist of a file, as text: one song per line with its start time. Pasting a YouTube
+ * description or comment works, as only the lines with a time are read. Whether lines say
+ * "Artist - Title" or "Title - Artist" is guessed (from the artists in the library, and from
+ * which side repeats) and can be switched; the songs are shown as they will be saved.
+ */
+@Composable
+fun TracklistEditor(file: MediaFile, isManual: Boolean, knownArtists: Collection<String>, onSave: (List<com.philpf.nova.core.Chapter>?) -> Unit) {
     val glass = LocalGlass.current
     var text by remember(file.id) { mutableStateOf(TextFieldValue(if (file.chapters.isNotEmpty()) TimestampText.format(file.chapters) else "")) }
-    val parsed = remember(text.text) { Chapters.normalize(TimestampText.parse(text.text), file.durationMs) }
+    var defaultArtist by remember(file.id) { mutableStateOf(TextFieldValue(file.artist.orEmpty())) }
+    // Guessed from the text until the switch is used. Songs that already name their artist
+    // are written back "Artist - Title", so they start that way.
+    var chosenOrder by remember(file.id) {
+        mutableStateOf(if (file.chapters.isNotEmpty() && file.chapters.all { it.artist != null }) NameOrder.ARTIST_FIRST else null)
+    }
+    val lines = remember(text.text) { TimestampText.parse(text.text).map { it.title } }
+    val detected = remember(lines, knownArtists) { TrackNames.detectOrder(lines, knownArtists) }
+    val order = chosenOrder ?: detected
+    val songs = remember(text.text, order, defaultArtist.text) { Tracklists.fromText(text.text, order, defaultArtist.text, file.durationMs) }
+
     SheetTitle("Tracklist")
     Text(file.title, style = GlassType.callout, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     Spacer(Modifier.height(8.dp))
@@ -256,7 +310,7 @@ fun TracklistEditor(file: MediaFile, isManual: Boolean, onSave: (List<com.philpf
         cursorBrush = SolidColor(glass.accent),
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 180.dp, max = 360.dp)
+            .heightIn(min = 140.dp, max = 280.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(glass.controlFill)
             .padding(14.dp),
@@ -265,15 +319,32 @@ fun TracklistEditor(file: MediaFile, isManual: Boolean, onSave: (List<com.philpf
             inner()
         },
     )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        if (parsed.isEmpty()) "No tracklist yet: at least two lines with a time." else "${songCount(parsed.size)} found",
-        style = GlassType.caption,
-        color = if (parsed.isEmpty()) glass.textTertiary else glass.accent,
+    Spacer(Modifier.height(12.dp))
+    SectionLabel("Each line says")
+    SegmentedControl(
+        listOf("Artist – Title", "Title – Artist"),
+        if (order == NameOrder.ARTIST_FIRST) 0 else 1,
+        { chosenOrder = if (it == 0) NameOrder.ARTIST_FIRST else NameOrder.TITLE_FIRST },
     )
+    Spacer(Modifier.height(10.dp))
+    SectionLabel("Artist of lines that name none")
+    GlassTextField(defaultArtist, { defaultArtist = it }, "Unknown artist")
+
+    Spacer(Modifier.height(14.dp))
+    SectionLabel(if (songs.isEmpty()) "No songs yet: at least two lines with a time" else "As it will show · ${songCount(songs.size)}")
+    songs.take(60).forEach { c ->
+        Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(Chapters.formatTime(c.startMs), style = GlassType.caption, color = glass.textTertiary, modifier = Modifier.width(52.dp))
+            Column(Modifier.weight(1f)) {
+                Text(c.title, style = GlassType.body, color = glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(c.artist ?: "Unknown artist", style = GlassType.caption, color = if (c.artist == null) glass.danger else glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+    if (songs.size > 60) Text("and ${songs.size - 60} more", style = GlassType.caption, color = glass.textTertiary, modifier = Modifier.padding(6.dp))
     Spacer(Modifier.height(12.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        GlassButton("Save", { onSave(parsed) }, primary = true, enabled = parsed.isNotEmpty() || text.text.isBlank())
+        GlassButton("Save", { onSave(songs) }, primary = true, enabled = songs.isNotEmpty() || text.text.isBlank())
         if (isManual) GlassButton("Use the file's own", { onSave(null) })
     }
 }

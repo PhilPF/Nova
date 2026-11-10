@@ -6,7 +6,10 @@ import android.net.Uri
 import com.philpf.nova.core.Chapter
 import com.philpf.nova.core.ChapterOrigin
 import com.philpf.nova.core.Chapters
+import com.philpf.nova.core.FileEdits
+import com.philpf.nova.core.FileEditsCodec
 import com.philpf.nova.core.FolderFiles
+import com.philpf.nova.core.Tracklists
 import com.philpf.nova.core.Library
 import com.philpf.nova.core.LibraryCodec
 import com.philpf.nova.core.ManualChaptersCodec
@@ -42,10 +45,12 @@ class LibraryRepository(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val cacheFile = File(context.filesDir, if (demoDir != null) "library-demo.json" else "library.json")
     private val manualFile = File(context.filesDir, "tracklists.json")
+    private val editsFile = File(context.filesDir, "edits.json")
     private val scanner = LibraryScanner(context, File(context.filesDir, if (demoDir != null) "art-demo" else "art"))
 
     private var scanned: List<MediaFile> = emptyList()
     private var manual: Map<String, List<Chapter>> = emptyMap()
+    private var edits: Map<String, FileEdits> = emptyMap()
 
     private val _library = MutableStateFlow(Library.EMPTY)
     val library: StateFlow<Library> = _library.asStateFlow()
@@ -63,6 +68,7 @@ class LibraryRepository(
         scope.launch {
             scanned = runCatching { LibraryCodec.decode(cacheFile.readText()) }.getOrDefault(emptyList())
             manual = runCatching { ManualChaptersCodec.decode(manualFile.readText()) }.getOrDefault(emptyMap())
+            edits = runCatching { FileEditsCodec.decode(editsFile.readText()) }.getOrDefault(emptyMap())
             publish()
             _loaded.value = true
             rescan()
@@ -122,6 +128,18 @@ class LibraryRepository(
 
     fun hasManualTracklist(fileId: String) = fileId in manual
 
+    /** Sets a file's title, artist and album in the app; null (or no edits) goes back to its tags. */
+    fun setEdits(fileId: String, e: FileEdits?) {
+        edits = if (e == null || e.isEmpty) edits - fileId else edits + (fileId to e)
+        publish()
+        scope.launch { runCatching { editsFile.writeText(FileEditsCodec.encode(edits)) } }
+    }
+
+    fun edits(fileId: String): FileEdits? = edits[fileId]
+
+    /** The file as its tags describe it, before the edits made in the app. */
+    fun original(fileId: String): MediaFile? = scanned.firstOrNull { it.id == fileId }
+
     /** The tracklist the file itself gives, without the one entered in the app. */
     fun ownChapters(fileId: String): List<Chapter> = scanned.firstOrNull { it.id == fileId }?.chapters.orEmpty()
 
@@ -131,9 +149,16 @@ class LibraryRepository(
         val shown = scanned.filter { f ->
             !FolderFiles.isHidden(f.folder, hidden) && !(skipMessaging && FolderFiles.isMessaging(f.folder, f.fileName))
         }
-        val files = shown.map { f ->
-            val m = manual[f.id] ?: return@map f
-            f.copy(chapters = Chapters.normalize(m, f.durationMs), chapterOrigin = ChapterOrigin.MANUAL)
+        val edited = shown.map { f -> edits[f.id]?.applyTo(f) ?: f }
+        // Artists of whole songs, to tell which side of "A - B" in a tracklist is the artist.
+        val known = edited.filter { !it.isMix }.mapNotNull { it.artist }.toSet()
+        val files = edited.map { f ->
+            val m = manual[f.id]
+            when {
+                m != null -> f.copy(chapters = Chapters.normalize(m, f.durationMs), chapterOrigin = ChapterOrigin.MANUAL)
+                f.isMix -> f.copy(chapters = Tracklists.ordered(f.chapters, known))
+                else -> f
+            }
         }
         _library.value = Library(files)
     }
