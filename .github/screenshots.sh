@@ -2,7 +2,6 @@
 # Takes screenshots of the debug build with the sample library (MainActivity's demo mode).
 set -euo pipefail
 PACKAGE=com.philpf.nova
-DEMO=/sdcard/Android/data/$PACKAGE/files/Demo
 adb install -r Nova.apk
 mkdir -p screenshots
 adb shell settings put global hide_error_dialogs 1
@@ -26,11 +25,10 @@ shot() {
   capture "$name"
 }
 
-# The first start makes the app's folder; then the sample library goes in it, and is scanned.
-open_app --es theme dark
-sleep 4
-adb shell mkdir -p "$DEMO"
-adb push demo/. "$DEMO/"
+# The sample library goes into the app's own files (run-as works for debug builds).
+adb push demo /data/local/tmp/nova-demo
+adb shell chmod -R a+rX /data/local/tmp/nova-demo
+adb shell "run-as $PACKAGE sh -c 'mkdir -p files/Demo && cp -r /data/local/tmp/nova-demo/. files/Demo/ && ls -R files/Demo'"
 shot library-dark 20 --es theme dark
 shot library-light 6 --es theme light
 shot albums-dark 6 --es theme dark --es tab albums

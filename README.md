@@ -87,5 +87,5 @@ compileSdk 34, minSdk 31).
 - **Android Studio.** Open the project and run it, or `./gradlew assembleDebug`.
 
 Debug builds show the sample library when started with
-`adb shell am start -n com.philpf.nova/.MainActivity --ez demo true`, after pushing it to
-`/sdcard/Android/data/com.philpf.nova/files/Demo` (see `.github/screenshots.sh`).
+`adb shell am start -n com.philpf.nova/.MainActivity --ez demo true`, after copying it into the
+app's `files/Demo` with `run-as` (see `.github/screenshots.sh`).
