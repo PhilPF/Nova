@@ -175,6 +175,7 @@ fun PlayerScreen(
             val pageHeight = maxHeight - peek - WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             // The picture is as large as the page leaves room for, at most 520 dp.
             val artMax = (maxHeight - insets - 480.dp).coerceIn(180.dp, 520.dp)
+            val panelMin = maxHeight - insets - 120.dp
 
             Column(
                 Modifier
@@ -292,7 +293,7 @@ fun PlayerScreen(
                     library = library,
                     now = now,
                     onEditTracklist = onEditTracklist,
-                    minHeight = maxHeight - insets - 120.dp,
+                    minHeight = panelMin,
                 )
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
