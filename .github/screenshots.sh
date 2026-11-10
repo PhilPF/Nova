@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Takes screenshots of the debug build with the sample library (MainActivity's demo mode).
+set -euo pipefail
+PACKAGE=com.philpf.nova
+DEMO=/sdcard/Android/data/$PACKAGE/files/Demo
+adb install -r Nova.apk
+mkdir -p screenshots
+adb shell settings put global hide_error_dialogs 1
+adb shell input keyevent KEYCODE_HOME
+sleep 8
+
+open_app() {
+  adb shell am force-stop "$PACKAGE"
+  adb shell am start -W -n "$PACKAGE/.MainActivity" --ez demo true "$@"
+}
+
+capture() {
+  adb exec-out screencap -p > "screenshots/$1.png"
+}
+
+shot() {
+  local name=$1 wait=$2
+  shift 2
+  open_app "$@"
+  sleep "$wait"
+  capture "$name"
+}
+
+# The first start makes the app's folder; then the sample library goes in it, and is scanned.
+open_app --es theme dark
+sleep 4
+adb shell mkdir -p "$DEMO"
+adb push demo/. "$DEMO/"
+shot library-dark 20 --es theme dark
+shot library-light 6 --es theme light
+shot albums-dark 6 --es theme dark --es tab albums
+shot artists-light 6 --es theme light --es tab artists
+shot playlists-dark 6 --es theme dark --es tab playlists
+shot video-tracklist-dark 6 --es theme dark --es tab playlists --es open mix
+shot artist-dark 6 --es theme dark --es open artist
+shot album-light 6 --es theme light --es open album
+shot menu-dark 6 --es theme dark --es open menu
+shot tracklist-editor-light 6 --es theme light --es open tracklist
+shot settings-light 6 --es theme light --es open settings
+# Playing the long video from its second song: the video in the art's place, the song inside it.
+shot player-video-dark 10 --es theme dark --es play mix --es open player
+adb shell input swipe 540 1900 540 700 400
+sleep 2
+capture player-video-tracklist-dark
+shot player-video-light 10 --es theme light --es play mix --es open player
+shot fullscreen 12 --es theme dark --es play mix --es open fullscreen
+adb shell input tap 1200 540
+sleep 1
+capture fullscreen-controls
+shot player-album-dark 10 --es theme dark --es play album --es open player
+shot player-art-dark 10 --es theme dark --es play mix --es open art
+shot queue-dark 10 --es theme dark --es play album --es open queue
+# The mini player over the library.
+shot mini-player-dark 10 --es theme dark --es play album
+
+ls -l screenshots
