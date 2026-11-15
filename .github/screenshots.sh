@@ -82,3 +82,5 @@ shot widget-dark 10 --es theme dark --es play mix --es open widget
 shot mini-player-dark 10 --es theme dark --es play album
 
 ls -l screenshots
+# Any crash of the app during the run, for the job's log.
+adb logcat -d -b crash | tail -80 || true
