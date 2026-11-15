@@ -25,6 +25,9 @@ Requires **Android 12 or newer** (the glass panels blur what is behind them with
   (a Media3 media session).
 - **Videos.** A video plays in the art's place, or full screen (landscape for wide videos; turning
   the phone also goes full screen). Settings or the player's chips switch a video to its art.
+- **Widget.** The song playing with its art on the home screen: square, the art edge to edge
+  with play/pause; wide, the art blurred behind with previous, play/pause and next. Its buttons
+  work with the app closed: Play picks up the last queue where it was.
 - **Playlists.** Make playlists of songs, or of songs *inside* long videos.
 - **Long videos as playlists.** A video holding several songs (a mix, a full album, a live set)
   becomes a playlist of its own under *Playlists › From videos*: each song is listed, credited to
@@ -82,6 +85,11 @@ changes them. yt-dlp already does this well, at download time, and is kept up to
 - `service/PlaybackService` is ExoPlayer in a `MediaSessionService`. A song inside a video is
   the video clipped to it (`ClippingConfiguration`); `ChapterPlayer` makes Next and Previous
   move between a video's songs, and the notification follows the song playing.
+- `ui/theme/Dimens.kt` holds the spacing (a 4 dp grid) and the corner radii: panels and
+  controls stand 16 dp from the edge of the screen or sheet, and text and pictures, in rows too,
+  start 8 dp further in. `ui/Waves.kt` is Dualsense Manager's press wave, here in a song's
+  colour: across the mini player when a song starts, a row when it is played, a card when it is
+  opened, and the player's next panel.
 - `ui/` is Compose: `glass/` and `theme/` are the Glass toolkit; the library, the player, the
   full-screen video and the sheets.
 

@@ -50,6 +50,8 @@ import com.philpf.nova.core.Library
 import com.philpf.nova.ui.art.Icon
 import com.philpf.nova.ui.art.NovaIcon
 import com.philpf.nova.ui.theme.GlassType
+import com.philpf.nova.ui.theme.Radius
+import com.philpf.nova.ui.theme.Space
 import kotlinx.coroutines.delay
 
 /**
@@ -111,10 +113,10 @@ fun FullscreenVideo(connection: PlayerConnection, library: Library, lockLandscap
                     Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.6f), 0.3f to Color.Transparent, 0.65f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.75f)),
                 ),
             ) {
-                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 18.dp, vertical = 10.dp)) {
+                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = Space.margin, vertical = Space.small)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         PlainIconButton(NovaIcon.FULLSCREEN_EXIT, "Leave full screen", onExit, Color.White)
-                        Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                        Column(Modifier.weight(1f).padding(horizontal = Space.small)) {
                             Text(now?.title ?: "", style = GlassType.headline, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             val line = listOfNotNull(now?.artist, if (now?.chapterTrack != null) "${now.chapterIndex + 1} of ${now.chapters.size} · ${now.track.file.title}" else null).joinToString(" · ")
                             if (line.isNotEmpty()) Text(line, style = GlassType.caption, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -137,9 +139,9 @@ fun FullscreenVideo(connection: PlayerConnection, library: Library, lockLandscap
                     )
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                         PlainIconButton(NovaIcon.PREVIOUS, "Previous", { connection.previous(); touched++ }, Color.White, size = 56.dp, iconSize = 32.dp)
-                        Spacer(Modifier.width(18.dp))
+                        Spacer(Modifier.width(Space.section))
                         PlayButton(state.playWhenReady, { connection.togglePlay(); touched++ }, size = 60.dp, fill = Color.White, iconColor = Color.Black)
-                        Spacer(Modifier.width(18.dp))
+                        Spacer(Modifier.width(Space.section))
                         PlainIconButton(NovaIcon.NEXT, "Next", { connection.next(); touched++ }, Color.White, size = 56.dp, iconSize = 32.dp)
                     }
                 }
@@ -155,19 +157,19 @@ fun FullscreenVideo(connection: PlayerConnection, library: Library, lockLandscap
                         .fillMaxHeight()
                         .width(340.dp)
                         .safeDrawingPadding()
-                        .padding(vertical = 64.dp, horizontal = 12.dp)
-                        .clip(RoundedCornerShape(24.dp))
+                        .padding(vertical = 64.dp, horizontal = Space.margin)
+                        .clip(RoundedCornerShape(Radius.card))
                         .background(Color(0xD90B0E1A))
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { touched++ },
                 ) {
-                    Column(Modifier.verticalScroll(rememberScrollState()).padding(8.dp)) {
-                        Text("TRACKLIST", style = GlassType.section, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(8.dp))
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(Space.inset)) {
+                        Text("TRACKLIST", style = GlassType.section, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(Space.inset))
                         androidx.compose.runtime.CompositionLocalProvider(
                             com.philpf.nova.ui.theme.LocalGlass provides com.philpf.nova.ui.theme.DarkGlass,
                         ) {
                             Tracklist(file, now.chapterIndex) { connection.seekTo(now.chapters[it].startMs); touched++ }
                         }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(Space.small))
                     }
                 }
             }

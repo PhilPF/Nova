@@ -65,6 +65,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.philpf.nova.ui.theme.GlassType
 import com.philpf.nova.ui.theme.LocalGlass
+import com.philpf.nova.ui.theme.Radius
+import com.philpf.nova.ui.theme.Space
 import com.philpf.nova.ui.theme.contentColorOn
 import kotlin.math.roundToInt
 
@@ -92,8 +94,8 @@ fun GlassButton(
             .clip(CircleShape)
             .background(fill)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            .padding(horizontal = Space.padding, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.small, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon?.invoke()
@@ -133,7 +135,7 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
         text = text.uppercase(),
         style = GlassType.section,
         color = LocalGlass.current.textTertiary,
-        modifier = modifier.padding(start = 6.dp, bottom = 8.dp),
+        modifier = modifier.padding(start = Space.inset, bottom = Space.small),
     )
 }
 
@@ -223,7 +225,7 @@ fun GlassChip(
                 this.selected = selected
                 role = Role.RadioButton
             }
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = Space.padding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -408,7 +410,7 @@ fun SettingRow(label: String, modifier: Modifier = Modifier, control: @Composabl
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = Space.inset, vertical = Space.small),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = GlassType.body, color = LocalGlass.current.textPrimary, modifier = Modifier.weight(1f))
@@ -427,7 +429,7 @@ fun GlassTextField(
 ) {
     val glass = LocalGlass.current
     val focusManager = LocalFocusManager.current
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(Radius.card)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
@@ -447,7 +449,7 @@ fun GlassTextField(
                 modifier = Modifier
                     .clip(shape)
                     .background(glass.controlFill)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = Space.padding, vertical = Space.gap),
             ) {
                 if (value.text.isEmpty()) {
                     Text(placeholder, style = GlassType.body, color = glass.textTertiary)

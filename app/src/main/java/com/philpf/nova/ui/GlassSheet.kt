@@ -51,6 +51,8 @@ import androidx.compose.ui.unit.dp
 import com.philpf.nova.ui.glass.Backdrop
 import com.philpf.nova.ui.glass.GlassSurface
 import com.philpf.nova.ui.theme.LocalGlass
+import com.philpf.nova.ui.theme.Radius
+import com.philpf.nova.ui.theme.Space
 import kotlin.math.roundToInt
 
 /**
@@ -126,19 +128,19 @@ fun BoxScope.GlassSheet(
                 .offset { IntOffset(0, pull.roundToInt()) }
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(horizontal = 8.dp)
-                .padding(bottom = 8.dp)
+                .padding(horizontal = Space.small)
+                .padding(bottom = Space.small)
                 .fillMaxWidth()
                 .heightIn(max = maxHeight),
-            shape = RoundedCornerShape(34.dp),
+            shape = RoundedCornerShape(Radius.panel),
             frost = glass.frost,
         ) {
             Column(
                 Modifier
                     .nestedScroll(pullToDismiss)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 10.dp, bottom = 22.dp),
+                    .padding(horizontal = Space.margin)
+                    .padding(top = Space.gap, bottom = Space.section),
             ) {
                 Box(
                     Modifier

@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -33,6 +35,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +55,8 @@ import com.philpf.nova.ui.glass.backdropSource
 import com.philpf.nova.ui.glass.rememberBackdrop
 import com.philpf.nova.ui.theme.GlassType
 import com.philpf.nova.ui.theme.LocalGlass
+import com.philpf.nova.ui.theme.Radius
+import com.philpf.nova.ui.theme.Space
 import kotlinx.coroutines.delay
 
 /** The sheet open over the screens. */
@@ -95,6 +103,7 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     var shownSheet by remember { mutableStateOf<Sheet?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
+    var widgetPreview by remember { mutableStateOf(false) }
 
     fun open(s: Sheet) {
         sheet = s
@@ -158,6 +167,7 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
                 "tracklist" -> mix?.let { open(Sheet.Tracklist(it.id)) }
                 "settings" -> open(Sheet.Settings)
                 "menu" -> library.songs.firstOrNull()?.let { open(Sheet.Song(it)) }
+                "widget" -> widgetPreview = true
                 "details" -> library.files.firstOrNull { it.isVideo && !it.isMix }?.let { open(Sheet.Details(it.id)) }
             }
         }
@@ -253,6 +263,17 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
             )
         }
 
+        if (widgetPreview) {
+            val m = connection.controller?.mediaMetadata
+            Box(Modifier.fillMaxSize().background(glass.backgroundBottom)) {
+                WidgetPreview(
+                    com.philpf.nova.widget.NowPlayingWidget.Info(
+                        m?.title?.toString(), m?.artist?.toString(), m?.artworkUri?.path, state.playWhenReady, state.mediaId != null,
+                    ),
+                )
+            }
+        }
+
         if (fullscreen != Fullscreen.OFF && state.mediaId != null) {
             FullscreenVideo(connection, library, lockLandscape = fullscreen == Fullscreen.BUTTON, onExit = { fullscreen = Fullscreen.OFF })
         }
@@ -265,8 +286,8 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
         ) {
             var text by remember { mutableStateOf("") }
             notice?.let { text = it }
-            GlassSurface(root, Modifier.padding(top = 48.dp, start = 24.dp, end = 24.dp), shape = CircleShape) {
-                Text(text, style = GlassType.callout, color = glass.textPrimary, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+            GlassSurface(root, Modifier.statusBarsPadding().padding(top = Space.small, start = Space.margin, end = Space.margin), shape = CircleShape) {
+                Text(text, style = GlassType.callout, color = glass.textPrimary, modifier = Modifier.padding(horizontal = Space.padding, vertical = Space.gap))
             }
         }
     }
@@ -445,31 +466,53 @@ private fun MiniPlayer(connection: PlayerConnection, track: Track, backdrop: Bac
         key = { connection.state.mediaId to Chapters.indexAt(now.chapters, positionState.longValue) },
         canNext = { connection.canNext() },
     )
+    // A wave of the art's colour across the panel each time a song starts (from its picture),
+    // and from the button when playing or pausing.
+    val waves = rememberWaves()
+    val density = LocalDensity.current
+    var width by remember { mutableIntStateOf(0) }
+    val song = state.mediaId to now.chapterIndex
+    var seenSong by remember { mutableStateOf(song) }
+    LaunchedEffect(song) {
+        if (song == seenSong) return@LaunchedEffect
+        seenSong = song
+        val x = with(density) { (Space.inset + 24.dp).toPx() }
+        waves.start(waveColor(track.file.art, glass.accent), Offset(x, with(density) { MiniPlayerHeight.toPx() } / 2f))
+    }
+    fun playWave() {
+        // The play button's centre: past the next button (44 dp) and a gap, from the right.
+        val fromRight = with(density) { (Space.inset + 44.dp + Space.gap + 22.dp).toPx() }
+        waves.start(glass.accent, Offset(width - fromRight, with(density) { MiniPlayerHeight.toPx() } / 2f))
+    }
     GlassSurface(
         backdrop = backdrop,
         modifier = modifier
             .navigationBarsPadding()
-            .padding(horizontal = 12.dp)
-            .padding(bottom = 12.dp)
+            .padding(horizontal = Space.margin)
+            .padding(bottom = Space.margin)
             .fillMaxWidth()
             .height(MiniPlayerHeight)
             .skipGesture(swipe)
             .swipeUpGesture(onOpen),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(Radius.card),
         onClick = onOpen,
     ) {
+        Box(Modifier.matchParentSize().onSizeChanged { width = it.width }.waves(waves))
         Row(
-            Modifier.fillMaxSize().skipOffset(swipe).padding(horizontal = 8.dp),
+            Modifier.fillMaxSize().skipOffset(swipe).padding(horizontal = Space.inset),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.gap),
         ) {
-            Artwork(track.file.art, size = 48.dp, video = track.file.isVideo, shape = RoundedCornerShape(14.dp))
+            Artwork(track.file.art, size = 48.dp, video = track.file.isVideo, shape = RoundedCornerShape(Radius.thumb))
             Column(Modifier.weight(1f)) {
                 Text(now.title, style = GlassType.headline, color = glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val line = now.artist ?: track.album
                 if (line != null) Text(line, style = GlassType.caption, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            PlainIconButton(if (state.playWhenReady) NovaIcon.PAUSE else NovaIcon.PLAY, if (state.playWhenReady) "Pause" else "Play", { connection.togglePlay() }, glass.textPrimary, size = 44.dp, iconSize = 28.dp)
+            PlainIconButton(if (state.playWhenReady) NovaIcon.PAUSE else NovaIcon.PLAY, if (state.playWhenReady) "Pause" else "Play", {
+                playWave()
+                connection.togglePlay()
+            }, glass.textPrimary, size = 44.dp, iconSize = 28.dp)
             PlainIconButton(NovaIcon.NEXT, "Next", { connection.next() }, glass.textPrimary, size = 44.dp, iconSize = 26.dp)
         }
     }

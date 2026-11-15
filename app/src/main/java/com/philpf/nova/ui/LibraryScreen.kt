@@ -1,6 +1,23 @@
 package com.philpf.nova.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.philpf.nova.ui.glass.backdropSource
+import com.philpf.nova.ui.glass.rememberBackdrop
+import com.philpf.nova.ui.theme.Radius
+import com.philpf.nova.ui.theme.Space
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -107,16 +124,16 @@ fun LibraryContent(
     LaunchedEffect(tab) { if (pager.currentPage != tab.ordinal && !pager.isScrollInProgress) pager.scrollToPage(tab.ordinal) }
 
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.padding(horizontal = 14.dp)) {
+        Column(Modifier.padding(horizontal = Space.margin)) {
             Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-            Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(start = Space.inset, top = Space.gap, bottom = Space.gap), verticalAlignment = Alignment.CenterVertically) {
                 Wordmark(Modifier.weight(1f))
                 if (progress != null) {
                     Text(
                         if (progress.total > 0) "${progress.done} / ${progress.total}" else "Scanning…",
                         style = GlassType.caption,
                         color = glass.textTertiary,
-                        modifier = Modifier.padding(end = 10.dp),
+                        modifier = Modifier.padding(end = Space.gap),
                     )
                 }
                 GlassIconButton(onClick = actions.openSettings, label = "Settings") {
@@ -129,19 +146,19 @@ fun LibraryContent(
                 onSelect = { scope.launch { pager.animateScrollToPage(it) } },
                 position = { pager.currentPage + pager.currentPageOffsetFraction },
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Space.gap))
             if (library.files.isNotEmpty()) {
                 GlassTextField(value = query, onValueChange = onQuery, placeholder = "Search")
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(Space.small))
             }
         }
 
         if (library.files.isEmpty()) {
-            Column(Modifier.padding(horizontal = 14.dp)) { EmptyLibrary(hasFolder, progress != null, backdrop, actions.chooseFolder) }
+            Column(Modifier.padding(horizontal = Space.margin)) { EmptyLibrary(hasFolder, progress != null, backdrop, actions.chooseFolder) }
             return@Column
         }
         HorizontalPager(state = pager, modifier = Modifier.weight(1f), beyondViewportPageCount = 1) { page ->
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp)) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = Space.margin, vertical = Space.small)) {
                 when (LibraryTab.entries[page]) {
                     LibraryTab.SONGS -> {
                         val songs = if (q.isEmpty()) library.songs else library.search(q)
@@ -154,8 +171,8 @@ fun LibraryContent(
                         val albums = library.albums.filter { q.isEmpty() || it.title.contains(q, true) || it.artist?.contains(q, true) == true }
                         if (albums.isEmpty()) item { NothingFound(q, if (q.isEmpty()) "No album tags in these files yet." else null) }
                         items(albums.chunked(2), key = { "a" + it.first().key }) { pair ->
-                            Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                for (album in pair) AlbumCard(album, backdrop, { actions.openAlbum(album) }, Modifier.weight(1f))
+                            Row(Modifier.fillMaxWidth().padding(bottom = Space.gap), horizontalArrangement = Arrangement.spacedBy(Space.gap)) {
+                                for (album in pair) AlbumCard(album, { actions.openAlbum(album) }, Modifier.weight(1f))
                                 if (pair.size == 1) Spacer(Modifier.weight(1f))
                             }
                         }
@@ -227,13 +244,13 @@ private fun LazyListScope.playlistItems(library: Library, playlists: List<Playli
         }
     }
     if (playlists.isNotEmpty()) {
-        item(key = "mine") { SectionLabel("Your playlists", Modifier.padding(top = 6.dp)) }
+        item(key = "mine") { SectionLabel("Your playlists", Modifier.padding(top = Space.small)) }
         items(playlists, key = { "p" + it.id }) { p ->
             val art = p.entries.firstNotNullOfOrNull { library.file(it.fileId)?.art }
             CollectionCard(p.name, songCount(p.entries.size), art, false, backdrop) { actions.openPlaylist(p) }
         }
     }
-    item(key = "mixes") { SectionLabel("From videos", Modifier.padding(top = 14.dp)) }
+    item(key = "mixes") { SectionLabel("From videos", Modifier.padding(top = Space.section - Space.gap)) }
     if (mixes.isEmpty()) {
         item(key = "nomix") {
             Text(
@@ -242,7 +259,7 @@ private fun LazyListScope.playlistItems(library: Library, playlists: List<Playli
                     "or add one yourself from a video's menu.",
                 style = GlassType.callout,
                 color = LocalGlass.current.textSecondary,
-                modifier = Modifier.padding(horizontal = 6.dp),
+                modifier = Modifier.padding(horizontal = Space.inset),
             )
         }
     }
@@ -265,30 +282,97 @@ fun originLabel(origin: ChapterOrigin) = when (origin) {
 @Composable
 private fun CollectionCard(title: String, subtitle: String, art: String?, video: Boolean, backdrop: Backdrop, onClick: () -> Unit) {
     val glass = LocalGlass.current
-    GlassSurface(backdrop, Modifier.fillMaxWidth().padding(bottom = 12.dp), shape = RoundedCornerShape(24.dp), onClick = onClick) {
-        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Artwork(art, size = 64.dp, video = video, shape = RoundedCornerShape(14.dp))
+    val waves = rememberWaves()
+    val scope = rememberCoroutineScope()
+    var touch by remember { mutableStateOf(Offset.Unspecified) }
+    GlassSurface(
+        backdrop,
+        Modifier.fillMaxWidth().padding(bottom = Space.gap).lastTouch { touch = it },
+        shape = RoundedCornerShape(Radius.card),
+        onClick = {
+            scope.launch {
+                waves.start(waveColor(art, glass.accent), touch)
+                delay(OPEN_AFTER_WAVE_MS)
+                onClick()
+            }
+        },
+    ) {
+        Row(
+            Modifier.waves(waves).padding(Space.inset),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.gap),
+        ) {
+            Artwork(art, size = 64.dp, video = video, shape = RoundedCornerShape(Radius.row))
             Column(Modifier.weight(1f)) {
                 Text(title, style = GlassType.headline, color = glass.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, style = GlassType.caption, color = glass.textSecondary, maxLines = 1)
             }
-            Icon(NovaIcon.CHEVRON_RIGHT, glass.textTertiary, Modifier.size(20.dp))
+            Icon(NovaIcon.CHEVRON_RIGHT, glass.textTertiary, Modifier.padding(end = Space.inset).size(20.dp))
         }
     }
 }
 
+/** A tapped card lets its wave start before its sheet covers it. */
+private const val OPEN_AFTER_WAVE_MS = 160L
+
+/**
+ * An album: its art edge to edge, its title and artist on a strip of glass over the art's foot
+ * (the art itself, blurred, through the glass), and a soft glow of its colour around it, as a
+ * controller glows behind its cell in Dualsense Manager. A tap sends a wave of that colour
+ * across it from the finger.
+ */
 @Composable
-private fun AlbumCard(album: Album, backdrop: Backdrop, onClick: () -> Unit, modifier: Modifier) {
+private fun AlbumCard(album: Album, onClick: () -> Unit, modifier: Modifier) {
     val glass = LocalGlass.current
-    GlassSurface(backdrop, modifier, shape = RoundedCornerShape(24.dp), onClick = onClick) {
-        Column(Modifier.padding(10.dp)) {
-            Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-                Artwork(album.art, Modifier.fillMaxSize(), size = 400.dp, shape = RoundedCornerShape(16.dp), sizePx = 400)
+    val color = rememberArtColors(album.art).firstOrNull() ?: glass.accent
+    val artBackdrop = rememberBackdrop()
+    val waves = rememberWaves()
+    val scope = rememberCoroutineScope()
+    var touch by remember { mutableStateOf(Offset.Unspecified) }
+    val shape = RoundedCornerShape(Radius.card)
+    Box(
+        modifier
+            .aspectRatio(1f)
+            // The glow, outside the card: it is not clipped.
+            .drawBehind {
+                val r = size.maxDimension * 0.75f
+                drawCircle(
+                    Brush.radialGradient(
+                        listOf(color.copy(alpha = glass.glowAlpha * 0.55f), Color.Transparent),
+                        center = Offset(size.width / 2f, size.height * 0.6f),
+                        radius = r,
+                    ),
+                    radius = r,
+                    center = Offset(size.width / 2f, size.height * 0.6f),
+                )
             }
-            Spacer(Modifier.height(8.dp))
-            Text(album.title, style = GlassType.headline, color = glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(album.artist ?: songCount(album.tracks.size), style = GlassType.caption, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            .clip(shape)
+            .lastTouch { touch = it }
+            .clickable {
+                scope.launch {
+                    waves.start(color, touch)
+                    delay(OPEN_AFTER_WAVE_MS)
+                    onClick()
+                }
+            }
+            .semantics { contentDescription = listOfNotNull(album.title, album.artist).joinToString(", ") },
+    ) {
+        Box(Modifier.fillMaxSize().backdropSource(artBackdrop)) {
+            Artwork(album.art, Modifier.fillMaxSize(), size = 400.dp, shape = RectangleShape, sizePx = 500)
         }
+        GlassSurface(
+            artBackdrop,
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            shape = RectangleShape,
+            frost = glass.backgroundBottom.copy(alpha = if (glass.isDark) 0.28f else 0.18f),
+        ) {
+            Column(Modifier.padding(horizontal = Space.gap, vertical = Space.small + 2.dp)) {
+                Text(album.title, style = GlassType.headline, color = glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(album.artist ?: songCount(album.tracks.size), style = GlassType.caption, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        // Waves over the art and the glass alike; the thin light rim of the toolkit's panels.
+        Box(Modifier.matchParentSize().waves(waves).border(1.dp, glass.rim[0].copy(alpha = 0.5f), shape))
     }
 }
 
@@ -298,11 +382,11 @@ private fun ArtistRow(artist: Artist, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(Radius.row))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = Space.inset, vertical = Space.small),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.gap),
     ) {
         Artwork(artist.art, size = 48.dp, shape = CircleShape)
         Column(Modifier.weight(1f)) {
@@ -324,15 +408,15 @@ private fun NothingFound(query: String, text: String? = null) {
         text ?: if (query.isEmpty()) "Nothing here yet." else "Nothing matches “$query”.",
         style = GlassType.body,
         color = LocalGlass.current.textSecondary,
-        modifier = Modifier.padding(16.dp),
+        modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.padding),
     )
 }
 
 @Composable
 private fun EmptyLibrary(hasFolder: Boolean, scanning: Boolean, backdrop: Backdrop, onChoose: () -> Unit) {
     val glass = LocalGlass.current
-    GlassSurface(backdrop, Modifier.fillMaxWidth().padding(top = 18.dp), shape = RoundedCornerShape(28.dp)) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    GlassSurface(backdrop, Modifier.fillMaxWidth().padding(top = Space.small), shape = RoundedCornerShape(Radius.card)) {
+        Column(Modifier.padding(Space.padding), verticalArrangement = Arrangement.spacedBy(Space.small)) {
             Icon(NovaIcon.STAR, glass.accent, Modifier.size(34.dp))
             Text(
                 when {
@@ -352,7 +436,7 @@ private fun EmptyLibrary(hasFolder: Boolean, scanning: Boolean, backdrop: Backdr
                 style = GlassType.callout,
                 color = glass.textSecondary,
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(Space.small))
             Row {
                 GlassButton(
                     text = if (hasFolder) "Choose another folder" else "Choose folder",

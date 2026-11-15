@@ -99,7 +99,7 @@ fun Artwork(
     path: String?,
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
-    shape: Shape = RoundedCornerShape(10.dp),
+    shape: Shape = RoundedCornerShape(com.philpf.nova.ui.theme.Radius.thumb),
     video: Boolean = false,
     sizePx: Int = 256,
 ) {

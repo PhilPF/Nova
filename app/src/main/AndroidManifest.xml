@@ -30,6 +30,18 @@
             </intent-filter>
         </activity>
 
+        <receiver
+            android:name=".widget.NowPlayingWidget"
+            android:exported="true"
+            android:label="Now playing">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget" />
+        </receiver>
+
         <service
             android:name=".service.PlaybackService"
             android:exported="true"

@@ -76,6 +76,8 @@ shot mini-player-swiped-dark 10 --es theme dark --es play album
 adb shell input swipe 800 2180 200 2180 200
 sleep 3
 capture mini-player-swiped-dark
+# The home-screen widget's two layouts, playing the long video.
+shot widget-dark 10 --es theme dark --es play mix --es open widget
 # The mini player over the library.
 shot mini-player-dark 10 --es theme dark --es play album
 

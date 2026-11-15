@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The art's outline in the wide widget (16 dp, Radius.row in the app). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#33FFFFFF" />
+    <corners android:radius="16dp" />
+</shape>

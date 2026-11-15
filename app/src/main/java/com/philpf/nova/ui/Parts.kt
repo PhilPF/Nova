@@ -53,6 +53,10 @@ import com.philpf.nova.ui.art.Icon
 import com.philpf.nova.ui.art.NovaIcon
 import com.philpf.nova.ui.theme.GlassType
 import com.philpf.nova.ui.theme.LocalGlass
+import com.philpf.nova.ui.theme.Radius
+import com.philpf.nova.ui.theme.Space
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 /** A song in a list: its picture, title and artist, its length and a button for more. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -67,15 +71,27 @@ fun TrackRow(
     number: String? = null,
 ) {
     val glass = LocalGlass.current
+    // Playing a song sends a wave of its colour across its row, from the finger.
+    val waves = rememberWaves()
+    val scope = rememberCoroutineScope()
+    var touch by remember { mutableStateOf(Offset.Unspecified) }
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(Radius.row))
             .background(if (playing) glass.controlFillSelected else Color.Transparent)
-            .combinedClickable(onClick = onClick, onLongClick = onMore)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .waves(waves)
+            .lastTouch { touch = it }
+            .combinedClickable(
+                onClick = {
+                    scope.launch { waves.start(waveColor(track.file.art, glass.accent), touch) }
+                    onClick()
+                },
+                onLongClick = onMore,
+            )
+            .padding(horizontal = Space.inset, vertical = Space.small),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.gap),
     ) {
         if (number != null) {
             Text(number, style = GlassType.callout, color = glass.textTertiary, modifier = Modifier.width(26.dp))
@@ -117,11 +133,11 @@ fun ActionRow(icon: NovaIcon, label: String, onClick: () -> Unit, enabled: Boole
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(Radius.row))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 12.dp),
+            .padding(horizontal = Space.inset, vertical = Space.gap),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.gap),
     ) {
         Icon(icon, color.copy(alpha = if (enabled) color.alpha else 0.35f), Modifier.size(22.dp))
         Text(label, style = GlassType.body, color = color.copy(alpha = if (enabled) color.alpha else 0.35f))
@@ -133,11 +149,11 @@ fun ActionRow(icon: NovaIcon, label: String, onClick: () -> Unit, enabled: Boole
 fun SheetHeader(title: String, subtitle: String?, art: String?, video: Boolean = false, round: Boolean = false) {
     val glass = LocalGlass.current
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = Space.inset, vertical = Space.small),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.gap),
     ) {
-        Artwork(art, size = 72.dp, video = video, shape = if (round) CircleShape else RoundedCornerShape(16.dp))
+        Artwork(art, size = 72.dp, video = video, shape = if (round) CircleShape else RoundedCornerShape(Radius.row))
         Column(Modifier.weight(1f)) {
             Text(title, style = GlassType.display.copy(fontSize = 24.sp, lineHeight = 28.sp), color = glass.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (!subtitle.isNullOrEmpty()) {
@@ -145,7 +161,7 @@ fun SheetHeader(title: String, subtitle: String?, art: String?, video: Boolean =
             }
         }
     }
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(Space.small))
 }
 
 /**
@@ -220,7 +236,7 @@ fun SeekBar(
             drawCircle(Color.White, radius = (if (dragging) 9.dp else 7.dp).toPx(), center = Offset(left + width * fraction, y))
         }
         if (showTimes) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = Space.inset)) {
                 val shown = if (dragging) (dragFraction * durationMs).toLong() else positionMs
                 Text(Chapters.formatTime(shown), style = GlassType.caption, color = timeColor, modifier = Modifier.weight(1f))
                 Text("-" + Chapters.formatTime((durationMs - shown).coerceAtLeast(0)), style = GlassType.caption, color = timeColor)
@@ -281,5 +297,5 @@ fun PlainIconButton(icon: NovaIcon, label: String, onClick: () -> Unit, tint: Co
 /** Bold section text inside a sheet. */
 @Composable
 fun SheetTitle(text: String) {
-    Text(text, style = GlassType.display.copy(fontSize = 26.sp, lineHeight = 30.sp), color = LocalGlass.current.textPrimary, modifier = Modifier.padding(vertical = 8.dp))
+    Text(text, style = GlassType.display.copy(fontSize = 26.sp, lineHeight = 30.sp), color = LocalGlass.current.textPrimary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
 }

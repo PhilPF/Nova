@@ -60,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.MutableLongState
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -87,6 +88,8 @@ import com.philpf.nova.ui.glass.backdropSource
 import com.philpf.nova.ui.glass.rememberBackdrop
 import com.philpf.nova.ui.theme.GlassType
 import com.philpf.nova.ui.theme.LocalGlass
+import com.philpf.nova.ui.theme.Radius
+import com.philpf.nova.ui.theme.Space
 import kotlinx.coroutines.delay
 
 /** What is playing, as the player page shows it: the track, and the song inside it when it is a long video. */
@@ -173,7 +176,7 @@ fun PlayerScreen(
         Modifier
             .fillMaxSize()
             .offset { IntOffset(0, pull.pull.roundToInt()) }
-            .clip(RoundedCornerShape(if (pull.pull > 0f) 28.dp else 0.dp))
+            .clip(RoundedCornerShape(if (pull.pull > 0f) Radius.panel else 0.dp))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
         // The scene: the art's colours glowing, and the art itself blurred over them.
@@ -209,14 +212,14 @@ fun PlayerScreen(
                     .fillMaxSize()
                     .nestedScroll(pull)
                     .verticalScroll(scroll)
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = Space.margin),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 SplitColumn(
                     minHeight = pageHeight,
                     top = {
                         Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-                        Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
                             GlassIconButton(onClick = onClose, label = "Close the player") { Icon(NovaIcon.CHEVRON_DOWN, glass.textPrimary, Modifier.size(26.dp)) }
                             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                                 val from = if (now?.chapterTrack != null) "PLAYING FROM A VIDEO" else if (track?.album != null) "PLAYING FROM" else "NOW PLAYING"
@@ -245,20 +248,20 @@ fun PlayerScreen(
                                         },
                                     )
                                     .skipOffset(swipe, move = !video)
-                                    .clip(RoundedCornerShape(28.dp)),
+                                    .clip(RoundedCornerShape(Radius.panel)),
                             ) {
                                 Crossfade(targetState = video, label = "media") { showingVideo ->
                                     if (showingVideo) {
                                         VideoSurface(connection.controller, Modifier.fillMaxSize())
                                     } else {
-                                        Artwork(art, Modifier.fillMaxSize(), size = artSize, shape = RoundedCornerShape(28.dp), video = isVideoFile, sizePx = 1000)
+                                        Artwork(art, Modifier.fillMaxSize(), size = artSize, shape = RoundedCornerShape(Radius.panel), video = isVideoFile, sizePx = 1000)
                                     }
                                 }
                                 // Over the video too, which would otherwise take the touches.
                                 Box(Modifier.matchParentSize().skipGesture(swipe))
                                 // A video's own buttons, in its corner: art or video, and full screen.
                                 if (isVideoFile && videoAllowed) {
-                                    Row(Modifier.align(Alignment.BottomEnd).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(Modifier.align(Alignment.BottomEnd).padding(Space.gap), horizontalArrangement = Arrangement.spacedBy(Space.small)) {
                                         GlassIconButton(onClick = { onShowVideo(!showVideo) }, label = if (showVideo) "Show the art" else "Show the video", size = 38.dp) {
                                             Icon(if (showVideo) NovaIcon.IMAGE else NovaIcon.VIDEO, Color.White, Modifier.size(18.dp))
                                         }
@@ -271,7 +274,7 @@ fun PlayerScreen(
                         }
                     },
                     bottom = {
-                        Column(Modifier.height(BottomBlockHeight).padding(horizontal = 6.dp), verticalArrangement = Arrangement.Bottom) {
+                        Column(Modifier.height(BottomBlockHeight).padding(horizontal = Space.inset), verticalArrangement = Arrangement.Bottom) {
                             // Title and artist (inside a long video, the song playing), always on the
                             // same lines: one for each, and one kept for "Song 2 of 6".
                             Row(Modifier.fillMaxWidth().skipOffset(swipe).skipGesture(swipe), verticalAlignment = Alignment.CenterVertically) {
@@ -289,7 +292,7 @@ fun PlayerScreen(
                                     GlassIconButton(onClick = { onMore(now?.chapterTrack ?: track) }, label = "More") { Icon(NovaIcon.MORE, glass.textPrimary, Modifier.size(22.dp)) }
                                 }
                             }
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(Space.gap))
 
                             SeekBar(
                                 positionMs = position,
@@ -298,7 +301,7 @@ fun PlayerScreen(
                                 onSeek = { connection.seekTo(it) },
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(Space.small))
 
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 PlainIconButton(NovaIcon.SHUFFLE, "Shuffle", { connection.toggleShuffle() }, if (state.shuffle) glass.accent else glass.textSecondary)
@@ -316,7 +319,7 @@ fun PlayerScreen(
                                     if (state.repeat != Player.REPEAT_MODE_OFF) glass.accent else glass.textSecondary,
                                 )
                             }
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(Space.gap))
                         }
                     },
                 )
@@ -330,7 +333,7 @@ fun PlayerScreen(
                     onEditTracklist = onEditTracklist,
                     minHeight = panelMin,
                 )
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(Space.section))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
             }
         }
@@ -391,8 +394,18 @@ private fun UpNextPanel(
     var tab by remember(state.mediaId) { mutableIntStateOf(if (chapters.isNotEmpty() && following == 0) 1 else 0) }
     if (chapters.isEmpty() && tab != 0) tab = 0
 
-    GlassSurface(backdrop, Modifier.fillMaxWidth().heightIn(min = minHeight), shape = RoundedCornerShape(28.dp)) {
-        Column(Modifier.padding(vertical = 12.dp, horizontal = 10.dp)) {
+    // A wave of the new song's colour from the panel's top, each time a song starts.
+    val waves = rememberWaves()
+    val song = state.mediaId to (now?.chapterIndex ?: -1)
+    var seenSong by remember { mutableStateOf(song) }
+    LaunchedEffect(song) {
+        if (song == seenSong) return@LaunchedEffect
+        seenSong = song
+        waves.startAt(waveColor(now?.track?.file?.art, glass.accent), 0.5f, 0f)
+    }
+    GlassSurface(backdrop, Modifier.fillMaxWidth().heightIn(min = minHeight), shape = RoundedCornerShape(Radius.panel)) {
+        Box(Modifier.matchParentSize().waves(waves))
+        Column(Modifier.padding(vertical = Space.gap, horizontal = Space.inset)) {
             Box(
                 Modifier
                     .align(Alignment.CenterHorizontally)
@@ -400,12 +413,12 @@ private fun UpNextPanel(
                     .clip(CircleShape)
                     .background(glass.textTertiary.copy(alpha = 0.35f)),
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Space.gap))
             if (chapters.isNotEmpty()) {
                 SegmentedControl(listOf("Up next", "Tracklist · ${chapters.size}"), tab, { tab = it })
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.small))
             } else {
-                SectionLabel(if (following > 0) "Up next · ${songCount(following)}" else "Up next", Modifier.padding(top = 4.dp, start = 4.dp))
+                SectionLabel(if (following > 0) "Up next · ${songCount(following)}" else "Up next", Modifier.padding(top = Space.small))
             }
             if (tab == 1 && now != null) {
                 Tracklist(now.track.file, now.chapterIndex) { connection.seekTo(chapters[it].startMs) }
@@ -433,7 +446,7 @@ private fun QueueList(connection: PlayerConnection, library: Library) {
     val start = state.index.coerceAtLeast(0)
     val last = minOf(state.queue.size - 1, start + QUEUE_SHOWN)
     if (state.queue.isEmpty()) {
-        Text("Nothing in the queue.", style = GlassType.body, color = glass.textSecondary, modifier = Modifier.padding(10.dp))
+        Text("Nothing in the queue.", style = GlassType.body, color = glass.textSecondary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
         return
     }
     val rowHeight = 60.dp
@@ -458,12 +471,12 @@ private fun QueueList(connection: PlayerConnection, library: Library) {
                     .height(rowHeight)
                     .zIndex(if (i == dragging) 1f else 0f)
                     .graphicsLayer { translationY = if (i == dragging) dragOffset else shift }
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(Radius.row))
                     .background(if (current) glass.controlFillSelected else if (i == dragging) glass.controlFill else Color.Transparent)
                     .clickable { connection.skipTo(i) }
-                    .padding(horizontal = 6.dp),
+                    .padding(horizontal = Space.inset),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(Space.gap),
             ) {
                 val file = library.track(item.mediaId)?.file
                 Artwork(file?.art, size = 42.dp, video = file?.isVideo == true)
@@ -507,7 +520,7 @@ private fun QueueList(connection: PlayerConnection, library: Library) {
         }
     }
     if (state.queue.size - 1 > last) {
-        Text("and ${state.queue.size - 1 - last} more", style = GlassType.caption, color = glass.textTertiary, modifier = Modifier.padding(10.dp))
+        Text("and ${state.queue.size - 1 - last} more", style = GlassType.caption, color = glass.textTertiary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
     }
 }
 
@@ -527,12 +540,12 @@ fun Tracklist(file: MediaFile, current: Int, onPick: (Int) -> Unit) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(Radius.row))
                 .background(if (playing) glass.controlFillSelected else Color.Transparent)
                 .clickable { onPick(i) }
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .padding(horizontal = Space.inset, vertical = Space.small),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.gap),
         ) {
             Text(Chapters.formatTime(t.startMs), style = GlassType.caption, color = if (playing) glass.accent else glass.textTertiary, modifier = Modifier.width(52.dp))
             Column(Modifier.weight(1f)) {

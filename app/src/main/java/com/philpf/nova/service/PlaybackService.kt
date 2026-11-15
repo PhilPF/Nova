@@ -16,6 +16,7 @@ import com.philpf.nova.NovaApp
 import com.philpf.nova.core.ChapterNav
 import com.philpf.nova.core.Chapter
 import com.philpf.nova.core.Chapters
+import com.philpf.nova.widget.NowPlayingWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,7 +71,46 @@ class PlaybackService : MediaSessionService() {
                 lastChapter = -2
                 followChapters(exo.isPlaying)
             }
+
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (events.containsAny(
+                        Player.EVENT_MEDIA_METADATA_CHANGED,
+                        Player.EVENT_PLAY_WHEN_READY_CHANGED,
+                        Player.EVENT_MEDIA_ITEM_TRANSITION,
+                        Player.EVENT_TIMELINE_CHANGED,
+                    )
+                ) {
+                    updateWidget()
+                }
+                if (events.contains(Player.EVENT_TIMELINE_CHANGED)) saveQueue()
+                if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_POSITION_DISCONTINUITY)) {
+                    ResumeStore.savePosition(this@PlaybackService, exo.currentMediaItemIndex, exo.currentPosition)
+                }
+            }
         })
+    }
+
+    private var widgetJob: Job? = null
+
+    /** Shows the song on the home-screen widget (its picture is decoded off the main thread). */
+    private fun updateWidget() {
+        val m = exo.mediaMetadata
+        val info = NowPlayingWidget.Info(
+            title = m.title?.toString(),
+            artist = m.artist?.toString(),
+            art = m.artworkUri?.path,
+            playing = exo.playWhenReady,
+            hasMedia = exo.mediaItemCount > 0,
+        )
+        widgetJob?.cancel()
+        widgetJob = scope.launch(Dispatchers.IO) { NowPlayingWidget.update(this@PlaybackService, info) }
+    }
+
+    /** Keeps the queue, for playing again after the app was closed. */
+    private fun saveQueue() {
+        if (exo.mediaItemCount == 0) return
+        val ids = (0 until exo.mediaItemCount).map { exo.getMediaItemAt(it).mediaId }
+        ResumeStore.save(this, ids, exo.currentMediaItemIndex, exo.currentPosition)
     }
 
     /** The current item's chapters, when it is a whole file (a clip is one song already). */
@@ -118,6 +158,10 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        if (exo.mediaItemCount > 0) ResumeStore.savePosition(this, exo.currentMediaItemIndex, exo.currentPosition)
+        // The widget stays on the last song, paused, ready to play it again.
+        val m = exo.mediaMetadata
+        NowPlayingWidget.update(this, NowPlayingWidget.Info(m.title?.toString(), m.artist?.toString(), m.artworkUri?.path, false, ResumeStore.load(this) != null))
         scope.cancel()
         session?.run {
             player.release()
@@ -136,6 +180,21 @@ class PlaybackService : MediaSessionService() {
         ): ListenableFuture<MutableList<MediaItem>> = scope.future {
             val library = app.library.awaitLoaded()
             mediaItems.mapNotNull { MediaItems.resolve(library, it.mediaId, it.mediaMetadata.takeIf { m -> m.title != null }) }.toMutableList()
+        }
+
+        /**
+         * Play pressed with nothing loaded (the widget, headphones or the system's media
+         * controls, after the app was closed): the last queue, where it was.
+         */
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+            val saved = ResumeStore.load(this@PlaybackService) ?: throw UnsupportedOperationException("Nothing to resume")
+            val library = app.library.awaitLoaded()
+            val items = saved.ids.mapNotNull { MediaItems.resolve(library, it) }
+            if (items.isEmpty()) throw UnsupportedOperationException("Nothing to resume")
+            MediaSession.MediaItemsWithStartPosition(items, saved.index.coerceIn(items.indices), saved.positionMs)
         }
     }
 }
