@@ -74,17 +74,16 @@ fun TrackRow(
     // Playing a song sends a wave of its colour across its row, from the finger.
     val waves = rememberWaves()
     val scope = rememberCoroutineScope()
-    var touch by remember { mutableStateOf(Offset.Unspecified) }
+    val touch = LocalTouch.current
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.row))
             .background(if (playing) glass.controlFillSelected else Color.Transparent)
             .waves(waves)
-            .lastTouch { touch = it }
             .combinedClickable(
                 onClick = {
-                    scope.launch { waves.start(waveColor(track.file.art, glass.accent), touch) }
+                    scope.launch { waves.startAtTouch(waveColor(track.file.art, glass.accent), touch) }
                     onClick()
                 },
                 onLongClick = onMore,

@@ -162,6 +162,23 @@ class LibraryTest {
 }
 
 class ArtColorsTest {
+    @Test fun accentsReadOnTheirTheme() {
+        val samples = listOf(0xFFFFD23C, 0xFF1030E0, 0xFF7A2CFF, 0xFFE01010, 0xFF20C060, 0xFF101060).map { it.toInt() }
+        val hsv = FloatArray(3)
+        for (c in samples) {
+            val dark = ArtColors.accent(c, dark = true)
+            val light = ArtColors.accent(c, dark = false)
+            assertTrue("dark ${Integer.toHexString(dark)}", ArtColors.luminance(dark) >= 0.4)
+            assertTrue("light ${Integer.toHexString(light)}", ArtColors.luminance(light) <= 0.2)
+            // The hue is kept (within rounding).
+            ArtColors.toHsv((c shr 16) and 0xFF, (c shr 8) and 0xFF, c and 0xFF, hsv)
+            val hue = hsv[0]
+            ArtColors.toHsv((light shr 16) and 0xFF, (light shr 8) and 0xFF, light and 0xFF, hsv)
+            val d = Math.abs(hue - hsv[0]).let { minOf(it, 360 - it) }
+            assertTrue("hue $hue vs ${hsv[0]}", d < 6)
+        }
+    }
+
     @Test fun dominantColours() {
         val red = 0xFFE01010.toInt()
         val blue = 0xFF1030E0.toInt()

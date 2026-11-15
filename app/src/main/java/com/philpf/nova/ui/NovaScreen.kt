@@ -35,6 +35,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.philpf.nova.core.ArtColors
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.mutableIntStateOf
@@ -82,8 +86,31 @@ data class DemoScript(val open: String?, val play: String?, val tab: String?)
 
 private val MiniPlayerHeight = 64.dp
 
+/**
+ * The app's screens, in the colours of the song playing: the accent (the position, the song
+ * playing in lists, the main buttons and switches) is its art's colour, the colour of its
+ * waves, made readable on the theme; without a song, or for grey art, the theme's own. Every
+ * touch on the screen is noted, for waves to start from it.
+ */
 @Composable
 fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, demo: DemoScript?) {
+    val base = LocalGlass.current
+    val library by app.library.library.collectAsState()
+    val art = connection.state.mediaId?.let { library.track(it) }?.file?.art
+    val artColor = rememberArtColors(art).firstOrNull()
+    val accent = remember(artColor, base.isDark) {
+        artColor?.let { Color(ArtColors.accent(it.toArgb(), base.isDark)) } ?: base.accent
+    }
+    val touch = LocalTouch.current
+    CompositionLocalProvider(LocalGlass provides base.copy(accent = accent)) {
+        Box(Modifier.fillMaxSize().recordTouches(touch)) {
+            NovaContent(app, connection, openPlayerTick, demo)
+        }
+    }
+}
+
+@Composable
+private fun NovaContent(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, demo: DemoScript?) {
     val glass = LocalGlass.current
     val library by app.library.library.collectAsState()
     val progress by app.library.progress.collectAsState()
@@ -470,20 +497,22 @@ private fun MiniPlayer(connection: PlayerConnection, track: Track, backdrop: Bac
     // and from the button when playing or pausing.
     val waves = rememberWaves()
     val density = LocalDensity.current
-    var width by remember { mutableIntStateOf(0) }
     val song = state.mediaId to now.chapterIndex
     var seenSong by remember { mutableStateOf(song) }
+    val touch = LocalTouch.current
     LaunchedEffect(song) {
         if (song == seenSong) return@LaunchedEffect
         seenSong = song
-        val x = with(density) { (Space.inset + 24.dp).toPx() }
-        waves.start(waveColor(track.file.art, glass.accent), Offset(x, with(density) { MiniPlayerHeight.toPx() } / 2f))
+        // From where the screen was touched to change it, else from the song's picture.
+        val color = waveColor(track.file.art, glass.accent)
+        val at = touch.recent()
+        if (at != null) {
+            waves.start(color, at - waves.rootOffset)
+        } else {
+            waves.start(color, Offset(with(density) { (Space.inset + 24.dp).toPx() }, with(density) { MiniPlayerHeight.toPx() } / 2f))
+        }
     }
-    fun playWave() {
-        // The play button's centre: past the next button (44 dp) and a gap, from the right.
-        val fromRight = with(density) { (Space.inset + 44.dp + Space.gap + 22.dp).toPx() }
-        waves.start(glass.accent, Offset(width - fromRight, with(density) { MiniPlayerHeight.toPx() } / 2f))
-    }
+    fun playWave() = waves.startAtTouch(glass.accent, touch)
     GlassSurface(
         backdrop = backdrop,
         modifier = modifier
@@ -497,7 +526,7 @@ private fun MiniPlayer(connection: PlayerConnection, track: Track, backdrop: Bac
         shape = RoundedCornerShape(Radius.card),
         onClick = onOpen,
     ) {
-        Box(Modifier.matchParentSize().onSizeChanged { width = it.width }.waves(waves))
+        Box(Modifier.matchParentSize().waves(waves))
         Row(
             Modifier.fillMaxSize().skipOffset(swipe).padding(horizontal = Space.inset),
             verticalAlignment = Alignment.CenterVertically,

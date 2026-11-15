@@ -284,14 +284,14 @@ private fun CollectionCard(title: String, subtitle: String, art: String?, video:
     val glass = LocalGlass.current
     val waves = rememberWaves()
     val scope = rememberCoroutineScope()
-    var touch by remember { mutableStateOf(Offset.Unspecified) }
+    val touch = LocalTouch.current
     GlassSurface(
         backdrop,
-        Modifier.fillMaxWidth().padding(bottom = Space.gap).lastTouch { touch = it },
+        Modifier.fillMaxWidth().padding(bottom = Space.gap),
         shape = RoundedCornerShape(Radius.card),
         onClick = {
             scope.launch {
-                waves.start(waveColor(art, glass.accent), touch)
+                waves.startAtTouch(waveColor(art, glass.accent), touch)
                 delay(OPEN_AFTER_WAVE_MS)
                 onClick()
             }
@@ -328,7 +328,7 @@ private fun AlbumCard(album: Album, onClick: () -> Unit, modifier: Modifier) {
     val artBackdrop = rememberBackdrop()
     val waves = rememberWaves()
     val scope = rememberCoroutineScope()
-    var touch by remember { mutableStateOf(Offset.Unspecified) }
+    val touch = LocalTouch.current
     val shape = RoundedCornerShape(Radius.card)
     Box(
         modifier
@@ -347,10 +347,9 @@ private fun AlbumCard(album: Album, onClick: () -> Unit, modifier: Modifier) {
                 )
             }
             .clip(shape)
-            .lastTouch { touch = it }
             .clickable {
                 scope.launch {
-                    waves.start(color, touch)
+                    waves.startAtTouch(color, touch)
                     delay(OPEN_AFTER_WAVE_MS)
                     onClick()
                 }

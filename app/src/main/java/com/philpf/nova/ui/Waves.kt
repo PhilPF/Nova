@@ -19,6 +19,11 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.runtime.staticCompositionLocalOf
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -41,6 +46,19 @@ class Wave internal constructor(val origin: Offset, val color: Color, val fracti
 @Stable
 class Waves internal constructor(private val scope: CoroutineScope) {
     internal val list = mutableStateListOf<Wave>()
+
+    /** Where the panel is on the screen, to place a touch made anywhere on it. */
+    internal var rootOffset = Offset.Zero
+
+    /**
+     * Starts a wave where the screen was last touched (wherever that was, even outside the
+     * panel: the wave then flows in from it), if that was within [recentMs]; else at the
+     * fallback, given as fractions of the panel's size.
+     */
+    fun startAtTouch(color: Color, touch: TouchPoint, fallbackX: Float = 0.5f, fallbackY: Float = 0.5f, recentMs: Long = TOUCH_RECENT_MS) {
+        val at = touch.recent(recentMs)
+        if (at != null) start(color, at - rootOffset) else startAt(color, fallbackX, fallbackY)
+    }
 
     /** Starts a wave at [origin] (unspecified: the panel's centre) in [color]. */
     fun start(color: Color, origin: Offset = Offset.Unspecified) = launch(Wave(origin, color))
@@ -65,7 +83,38 @@ fun rememberWaves(): Waves {
 }
 
 /** Draws the waves under the content; the caller clips to its panel. */
-fun Modifier.waves(waves: Waves): Modifier = drawBehind { drawWaves(waves) }
+fun Modifier.waves(waves: Waves): Modifier =
+    onGloballyPositioned { waves.rootOffset = it.positionInRoot() }.drawBehind { drawWaves(waves) }
+
+/** A touch counts for a wave this long: long enough for a tap's effect (a new song) to arrive. */
+private const val TOUCH_RECENT_MS = 2_000L
+
+/** Where the screen was last touched, in the root's coordinates, and when. */
+@Stable
+class TouchPoint {
+    var position: Offset = Offset.Unspecified
+        internal set
+    var time: Long = 0L
+        internal set
+
+    /** The last touch if it was within [ms], else null. */
+    fun recent(ms: Long = TOUCH_RECENT_MS): Offset? =
+        position.takeIf { it.isSpecified && SystemClock.uptimeMillis() - time <= ms }
+}
+
+val LocalTouch = staticCompositionLocalOf { TouchPoint() }
+
+/**
+ * Records every touch on the screen (it sits at the root and looks first, before buttons and
+ * lists take the touch), so waves can start from it.
+ */
+fun Modifier.recordTouches(touch: TouchPoint): Modifier = pointerInput(touch) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        touch.position = down.position
+        touch.time = SystemClock.uptimeMillis()
+    }
+}
 
 /**
  * Draws [waves]: discs growing from their origin until they cover the whole area, brightest
@@ -111,14 +160,6 @@ fun DrawScope.drawWaves(waves: Waves) {
 private fun smoothstep(from: Float, to: Float, x: Float): Float {
     val t = ((x - from) / (to - from)).coerceIn(0f, 1f)
     return t * t * (3f - 2f * t)
-}
-
-/** Keeps where the last touch on it went down, for a wave to start there. Does not consume it. */
-fun Modifier.lastTouch(onDown: (Offset) -> Unit): Modifier = pointerInput(Unit) {
-    awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = false)
-        onDown(down.position)
-    }
 }
 
 /** The colour a song's waves take: its art's main colour, else [fallback]. */

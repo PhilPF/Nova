@@ -394,14 +394,16 @@ private fun UpNextPanel(
     var tab by remember(state.mediaId) { mutableIntStateOf(if (chapters.isNotEmpty() && following == 0) 1 else 0) }
     if (chapters.isEmpty() && tab != 0) tab = 0
 
-    // A wave of the new song's colour from the panel's top, each time a song starts.
+    // A wave of the new song's colour each time a song starts.
     val waves = rememberWaves()
+    val touch = LocalTouch.current
     val song = state.mediaId to (now?.chapterIndex ?: -1)
     var seenSong by remember { mutableStateOf(song) }
     LaunchedEffect(song) {
         if (song == seenSong) return@LaunchedEffect
         seenSong = song
-        waves.startAt(waveColor(now?.track?.file?.art, glass.accent), 0.5f, 0f)
+        // From where the screen was touched to change it (a swipe, Next), else from the top.
+        waves.startAtTouch(waveColor(now?.track?.file?.art, glass.accent), touch, 0.5f, 0f)
     }
     GlassSurface(backdrop, Modifier.fillMaxWidth().heightIn(min = minHeight), shape = RoundedCornerShape(Radius.panel)) {
         Box(Modifier.matchParentSize().waves(waves))
