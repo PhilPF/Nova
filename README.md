@@ -31,6 +31,11 @@ Requires **Android 12 or newer** (the glass panels blur what is behind them with
   or forward. Forward past the end goes to the next song; back past the start by up to 3 s goes
   to the start, further to the previous song (`core/SkipRule`); a song inside a long video counts
   as a song of its own. The screen stays on while the player is open.
+- **Long titles** that do not fit scroll slowly (their start shown first, then their end, then
+  back), in the player, the mini player and the song playing in lists; Settings turns it off.
+- **Sheets** (an album, an artist, a playlist, a song's menu, …) open up to three quarters of the
+  screen; drag them or scroll their list up for their full height. Their head (picture, title,
+  Play and Shuffle) stays while the list scrolls under it.
 - **Where you left off.** Opening the app again brings back the last queue at the song and the
   time it was left, paused, in that song's colour.
 - **Widget.** The song playing with its art on the home screen: square, the art edge to edge

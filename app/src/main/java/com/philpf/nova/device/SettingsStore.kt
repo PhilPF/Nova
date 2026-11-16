@@ -30,6 +30,15 @@ class SettingsStore(context: Context) {
     private val _showVideo = MutableStateFlow(prefs.getBoolean(KEY_SHOW_VIDEO, true))
     val showVideo: StateFlow<Boolean> = _showVideo.asStateFlow()
 
+    /** Whether titles too long for their place scroll, slowly (else they end in "…"). */
+    private val _scrollTitles = MutableStateFlow(prefs.getBoolean(KEY_SCROLL_TITLES, true))
+    val scrollTitles: StateFlow<Boolean> = _scrollTitles.asStateFlow()
+
+    fun setScrollTitles(on: Boolean) {
+        _scrollTitles.value = on
+        prefs.edit().putBoolean(KEY_SCROLL_TITLES, on).apply()
+    }
+
     /** The colour of the last song's art (ARGB), so the app opens in it; 0 for none. */
     var lastSongColor: Int
         get() = prefs.getInt(KEY_SONG_COLOR, 0)
@@ -74,5 +83,6 @@ class SettingsStore(context: Context) {
         const val KEY_SKIP_MESSAGING = "skipMessaging"
         const val KEY_SHOW_VIDEO = "showVideo"
         const val KEY_SONG_COLOR = "songColor"
+        const val KEY_SCROLL_TITLES = "scrollTitles"
     }
 }

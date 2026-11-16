@@ -67,8 +67,11 @@ fun PlayShuffleRow(onPlay: () -> Unit, onShuffle: () -> Unit) {
 @Composable
 fun AlbumSheet(album: Album, playingId: String?, play: (List<Track>, Int, Boolean) -> Unit, onMore: (Track) -> Unit) {
     val minutes = album.tracks.sumOf { it.durationMs } / 60_000
-    SheetHeader(album.title, listOfNotNull(album.artist, album.year?.toString(), "${songCount(album.tracks.size)}, $minutes min").joinToString(" · "), album.art)
-    PlayShuffleRow({ play(album.tracks, 0, false) }, { play(album.tracks, 0, true) })
+    if (sheetHeader {
+            SheetHeader(album.title, listOfNotNull(album.artist, album.year?.toString(), "${songCount(album.tracks.size)}, $minutes min").joinToString(" · "), album.art)
+            PlayShuffleRow({ play(album.tracks, 0, false) }, { play(album.tracks, 0, true) })
+        }
+    ) return
     album.tracks.forEachIndexed { i, t ->
         TrackRow(t, t.mediaId == playingId, { play(album.tracks, i, false) }, { onMore(t) }, number = (t.file.trackNumber ?: (i + 1)).toString(), subtitle = t.artist.takeIf { it != album.artist } ?: "")
     }
@@ -77,8 +80,11 @@ fun AlbumSheet(album: Album, playingId: String?, play: (List<Track>, Int, Boolea
 @Composable
 fun ArtistSheet(artist: Artist, playingId: String?, play: (List<Track>, Int, Boolean) -> Unit, onMore: (Track) -> Unit, openAlbum: (Album) -> Unit) {
     val glass = LocalGlass.current
-    SheetHeader(artist.name, songCount(artist.tracks.size), artist.art, round = true)
-    PlayShuffleRow({ play(artist.tracks, 0, false) }, { play(artist.tracks, 0, true) })
+    if (sheetHeader {
+            SheetHeader(artist.name, songCount(artist.tracks.size), artist.art, round = true)
+            PlayShuffleRow({ play(artist.tracks, 0, false) }, { play(artist.tracks, 0, true) })
+        }
+    ) return
     if (artist.albums.isNotEmpty()) {
         SectionLabel("Albums", Modifier.padding(top = Space.small))
         artist.albums.forEach { a ->
@@ -118,15 +124,17 @@ fun PlaylistSheet(
     var renaming by remember { mutableStateOf(false) }
     var name by remember(playlist.id) { mutableStateOf(TextFieldValue(playlist.name)) }
     val playable = tracks.filterNotNull()
-    SheetHeader(playlist.name, songCount(playlist.entries.size), playable.firstNotNullOfOrNull { it.file.art })
+    if (sheetHeader {
+            SheetHeader(playlist.name, songCount(playlist.entries.size), playable.firstNotNullOfOrNull { it.file.art })
+            PlayShuffleRow({ play(playable, 0, false) }, { play(playable, 0, true) })
+        }
+    ) return
     if (renaming) {
         GlassTextField(name, { name = it }, "Name")
         Row(Modifier.padding(vertical = Space.gap), horizontalArrangement = Arrangement.spacedBy(Space.gap)) {
             GlassButton("Save", { onRename(name.text); renaming = false }, primary = true)
             GlassButton("Cancel", { renaming = false })
         }
-    } else {
-        PlayShuffleRow({ play(playable, 0, false) }, { play(playable, 0, true) })
     }
     if (playlist.entries.isEmpty()) {
         Text("Add songs from their menu (⋮ or a long press): Add to playlist.", style = GlassType.callout, color = glass.textSecondary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
@@ -158,8 +166,11 @@ fun MixSheet(
     onEdit: () -> Unit,
 ) {
     val glass = LocalGlass.current
-    SheetHeader(file.title, listOfNotNull(file.artist, "${songCount(file.chapters.size)} · ${originLabel(file.chapterOrigin)}").joinToString(" · "), file.art, file.isVideo)
-    PlayShuffleRow({ onPlayFrom(0) }, onShuffle)
+    if (sheetHeader {
+            SheetHeader(file.title, listOfNotNull(file.artist, "${songCount(file.chapters.size)} · ${originLabel(file.chapterOrigin)}").joinToString(" · "), file.art, file.isVideo)
+            PlayShuffleRow({ onPlayFrom(0) }, onShuffle)
+        }
+    ) return
     val current = if (playingId == file.id) Chapters.indexAt(file.chapters, positionInPlaying()) else -1
     file.chapterTracks.forEachIndexed { i, t ->
         Row(
@@ -205,7 +216,7 @@ fun SongMenu(
     onHideFolder: () -> Unit = {},
 ) {
     val sub = listOfNotNull(track.artist, if (track.chapterIndex >= 0) "in ${track.file.title}" else track.album).joinToString(" · ")
-    SheetHeader(track.title, sub, track.file.art, track.file.isVideo)
+    if (sheetHeader { SheetHeader(track.title, sub, track.file.art, track.file.isVideo) }) return
     ActionRow(NovaIcon.PLAY, "Play", onPlay)
     ActionRow(NovaIcon.NEXT, "Play next", onPlayNext)
     ActionRow(NovaIcon.QUEUE, "Add to queue", onQueue)
@@ -222,7 +233,7 @@ fun SongMenu(
 @Composable
 fun AddToPlaylistSheet(title: String, playlists: List<Playlist>, onPick: (Playlist) -> Unit, onCreate: (String) -> Unit) {
     var name by remember { mutableStateOf(TextFieldValue("")) }
-    SheetTitle("Add “$title” to")
+    if (sheetHeader { SheetTitle("Add “$title” to") }) return
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.gap)) {
         Box(Modifier.weight(1f)) { GlassTextField(name, { name = it }, "New playlist") }
         GlassButton("Create", { onCreate(name.text.ifBlank { "Playlist" }) }, primary = true)
@@ -234,7 +245,7 @@ fun AddToPlaylistSheet(title: String, playlists: List<Playlist>, onPick: (Playli
 @Composable
 fun NewPlaylistSheet(onCreate: (String) -> Unit) {
     var name by remember { mutableStateOf(TextFieldValue("")) }
-    SheetTitle("New playlist")
+    if (sheetHeader { SheetTitle("New playlist") }) return
     GlassTextField(name, { name = it }, "Name")
     Spacer(Modifier.height(Space.gap))
     Row { GlassButton("Create", { onCreate(name.text.ifBlank { "Playlist" }) }, primary = true) }
@@ -250,9 +261,12 @@ fun DetailsEditor(file: MediaFile, original: MediaFile, hasEdits: Boolean, onSav
     var title by remember(file.id) { mutableStateOf(TextFieldValue(file.title)) }
     var artist by remember(file.id) { mutableStateOf(TextFieldValue(file.artist.orEmpty())) }
     var album by remember(file.id) { mutableStateOf(TextFieldValue(file.album.orEmpty())) }
-    SheetTitle("Details")
-    Text(file.fileName, style = GlassType.caption, color = glass.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = Space.inset))
-    Spacer(Modifier.height(Space.gap))
+    if (sheetHeader {
+            SheetTitle("Details")
+            Text(file.fileName, style = GlassType.caption, color = glass.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = Space.inset))
+            Spacer(Modifier.height(Space.gap))
+        }
+    ) return
     SectionLabel("Title")
     GlassTextField(title, { title = it }, original.title)
     Spacer(Modifier.height(Space.gap))
@@ -296,9 +310,12 @@ fun TracklistEditor(file: MediaFile, isManual: Boolean, knownArtists: Collection
     val order = chosenOrder ?: detected
     val songs = remember(text.text, order, defaultArtist.text) { Tracklists.fromText(text.text, order, defaultArtist.text, file.durationMs) }
 
-    SheetTitle("Tracklist")
-    Text(file.title, style = GlassType.callout, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = Space.inset))
-    Spacer(Modifier.height(Space.small))
+    if (sheetHeader {
+            SheetTitle("Tracklist")
+            Text(file.title, style = GlassType.callout, color = glass.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = Space.inset))
+            Spacer(Modifier.height(Space.small))
+        }
+    ) return
     Text(
         "One song per line, starting with its time: “3:41 Artist - Title”. Paste a video's description " +
             "or the comment with its tracklist; lines without a time are skipped.",
@@ -364,12 +381,14 @@ fun SettingsSheet(
     onChangeFolder: () -> Unit,
     onShowFolder: (String) -> Unit,
     onSkipMessaging: (Boolean) -> Unit,
+    scrollTitles: Boolean,
+    onScrollTitles: (Boolean) -> Unit,
     onRescan: () -> Unit,
     onTheme: (ThemeMode) -> Unit,
     onShowVideo: (Boolean) -> Unit,
 ) {
     val glass = LocalGlass.current
-    SheetTitle("Settings")
+    if (sheetHeader { SheetTitle("Settings") }) return
     SectionLabel("Music folder", Modifier.padding(top = Space.small))
     Row(Modifier.fillMaxWidth().padding(horizontal = Space.inset, vertical = Space.small), verticalAlignment = Alignment.CenterVertically) {
         Icon(NovaIcon.FOLDER, glass.textSecondary, Modifier.size(20.dp))
@@ -396,6 +415,7 @@ fun SettingsSheet(
     SectionLabel("Appearance", Modifier.padding(top = Space.section))
     SegmentedControl(listOf("System", "Light", "Dark"), theme.ordinal, { onTheme(ThemeMode.entries[it]) })
     SettingRow("Play videos as video") { GlassSwitch(showVideo, onShowVideo, "Play videos as video") }
+    SettingRow("Scroll long titles") { GlassSwitch(scrollTitles, onScrollTitles, "Scroll long titles") }
 
     SectionLabel("Tracklists of long videos", Modifier.padding(top = Space.section))
     Text(

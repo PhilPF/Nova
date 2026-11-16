@@ -98,13 +98,8 @@ fun TrackRow(
             Artwork(track.file.art, size = 48.dp, video = track.file.isVideo)
         }
         Column(Modifier.weight(1f)) {
-            Text(
-                track.title,
-                style = GlassType.headline,
-                color = if (playing) glass.accent else glass.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Only the song playing scrolls a long title: a whole list moving would be hard to read.
+            MarqueeText(track.title, GlassType.headline, if (playing) glass.accent else glass.textPrimary, animate = playing)
             val line = subtitle ?: listOfNotNull(track.artist, if (track.file.isMix && !track.isClip) "${track.file.chapters.size} songs" else null)
                 .joinToString(" · ")
             if (line.isNotEmpty()) {
@@ -154,9 +149,10 @@ fun SheetHeader(title: String, subtitle: String?, art: String?, video: Boolean =
     ) {
         Artwork(art, size = 72.dp, video = video, shape = if (round) CircleShape else RoundedCornerShape(Radius.row))
         Column(Modifier.weight(1f)) {
-            Text(title, style = GlassType.display.copy(fontSize = 24.sp, lineHeight = 28.sp), color = glass.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // Long names wrap: a sheet has the room, and the whole name can be read at a glance.
+            Text(title, style = GlassType.display.copy(fontSize = 24.sp, lineHeight = 28.sp), color = glass.textPrimary, maxLines = 4, overflow = TextOverflow.Ellipsis)
             if (!subtitle.isNullOrEmpty()) {
-                Text(subtitle, style = GlassType.callout, color = glass.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = GlassType.callout, color = glass.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
         }
     }

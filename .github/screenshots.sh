@@ -40,6 +40,9 @@ shot playlists-dark 6 --es theme dark --es tab playlists
 shot video-tracklist-dark 6 --es theme dark --es tab playlists --es open mix
 shot artist-dark 6 --es theme dark --es open artist
 shot album-light 6 --es theme light --es open album
+adb shell input swipe 540 1700 540 900 400
+sleep 2
+capture album-expanded-light
 shot menu-dark 6 --es theme dark --es open menu
 shot tracklist-editor-light 6 --es theme light --es open tracklist
 shot settings-light 6 --es theme light --es open settings

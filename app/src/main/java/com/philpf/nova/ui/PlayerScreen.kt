@@ -221,7 +221,7 @@ fun PlayerScreen(
             // The picture: a square as wide as the page (less a small margin), unless the page is
             // too short for it and the controls. A video takes its own shape in that width, so
             // the page is shorter and the panel below rises; the change is animated.
-            val artSize = minOf(maxWidth - 32.dp, pageHeight - top - 64.dp - BottomBlockHeight - 24.dp, 560.dp).coerceAtLeast(160.dp)
+            val artSize = minOf(maxWidth - 32.dp, pageHeight - top - 64.dp - BottomBlockHeight - 24.dp - Space.section, 560.dp).coerceAtLeast(160.dp)
             val panelMin = maxHeight - top - bottomInset - 120.dp
 
             Column(
@@ -238,11 +238,12 @@ fun PlayerScreen(
                         Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
                         Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
                             GlassIconButton(onClick = onClose, label = "Close the player") { Icon(NovaIcon.CHEVRON_DOWN, glass.textPrimary, Modifier.size(26.dp)) }
-                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            // Between the two buttons, with the same room on each side.
+                            Column(Modifier.weight(1f).padding(horizontal = Space.gap), horizontalAlignment = Alignment.CenterHorizontally) {
                                 val from = if (now?.chapterTrack != null) "PLAYING FROM A VIDEO" else if (track?.album != null) "PLAYING FROM" else "NOW PLAYING"
                                 Text(from, style = GlassType.section, color = glass.textTertiary)
                                 val source = if (now?.chapterTrack != null) now.track.file.title else track?.album
-                                Text(source ?: "", style = GlassType.callout, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                MarqueeText(source ?: "", GlassType.callout, glass.textSecondary)
                             }
                             GlassIconButton(onClick = { scope.launch { scroll.animateScrollTo(scroll.maxValue) } }, label = "Up next") {
                                 Icon(NovaIcon.QUEUE, glass.textPrimary, Modifier.size(22.dp))
@@ -310,8 +311,8 @@ fun PlayerScreen(
                             // same lines: one for each, and one kept for "Song 2 of 6".
                             Row(Modifier.fillMaxWidth().skipOffset(swipe).skipGesture(swipe), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(now?.title ?: "Nothing playing", style = GlassType.display, color = glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(now?.artist ?: "", style = GlassType.headline, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    MarqueeText(now?.title ?: "Nothing playing", GlassType.display, glass.textPrimary)
+                                    MarqueeText(now?.artist ?: "", GlassType.headline, glass.textSecondary)
                                     Text(
                                         if (now?.chapterTrack != null) "Song ${now.chapterIndex + 1} of ${now.chapters.size}" else "",
                                         style = GlassType.caption,
@@ -356,6 +357,7 @@ fun PlayerScreen(
                 )
 
                 // Up next (and a long video's songs), peeking at the bottom: swipe up for all of it.
+                Spacer(Modifier.height(Space.section))
                 UpNextPanel(
                     backdrop = background,
                     connection = connection,
@@ -438,20 +440,14 @@ private fun UpNextPanel(
     }
     GlassSurface(backdrop, Modifier.fillMaxWidth().heightIn(min = minHeight), shape = RoundedCornerShape(Radius.panel)) {
         Box(Modifier.matchParentSize().waves(waves))
-        Column(Modifier.padding(vertical = Space.gap, horizontal = Space.inset)) {
-            Box(
-                Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .size(width = 38.dp, height = 5.dp)
-                    .clip(CircleShape)
-                    .background(glass.textTertiary.copy(alpha = 0.35f)),
-            )
-            Spacer(Modifier.height(Space.gap))
+        // An even margin all round, so what is inside (the tabs, the rows' highlights) has
+        // corners that follow the panel's: its radius less the margin.
+        Column(Modifier.padding(Space.inset)) {
             if (chapters.isNotEmpty()) {
                 SegmentedControl(listOf("Up next", "Tracklist · ${chapters.size}"), tab, { tab = it })
                 Spacer(Modifier.height(Space.small))
             } else {
-                SectionLabel(if (following > 0) "Up next · ${songCount(following)}" else "Up next", Modifier.padding(top = Space.small))
+                SectionLabel(if (following > 0) "Up next · ${songCount(following)}" else "Up next", Modifier.padding(top = Space.gap))
             }
             if (tab == 1 && now != null) {
                 Tracklist(now.track.file, now.chapterIndex) { connection.seekTo(chapters[it].startMs) }
@@ -504,7 +500,7 @@ private fun QueueList(connection: PlayerConnection, library: Library) {
                     .height(rowHeight)
                     .zIndex(if (i == dragging) 1f else 0f)
                     .graphicsLayer { translationY = if (i == dragging) dragOffset else shift }
-                    .clip(RoundedCornerShape(Radius.row))
+                    .clip(RoundedCornerShape(Radius.panel - Space.inset))
                     .background(if (current) glass.controlFillSelected else if (i == dragging) glass.controlFill else Color.Transparent)
                     .clickable { connection.skipTo(i) }
                     .padding(horizontal = Space.inset),
@@ -573,7 +569,7 @@ fun Tracklist(file: MediaFile, current: Int, onPick: (Int) -> Unit) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(Radius.row))
+                .clip(RoundedCornerShape(Radius.panel - Space.inset))
                 .background(if (playing) glass.controlFillSelected else Color.Transparent)
                 .clickable { onPick(i) }
                 .padding(horizontal = Space.inset, vertical = Space.small),

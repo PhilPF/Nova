@@ -119,7 +119,12 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
     }
 
     val touch = LocalTouch.current
-    CompositionLocalProvider(LocalGlass provides base.copy(accent = accent), LocalDarkAccent provides darkAccent) {
+    val scrollTitles by app.settings.scrollTitles.collectAsState()
+    CompositionLocalProvider(
+        LocalGlass provides base.copy(accent = accent),
+        LocalDarkAccent provides darkAccent,
+        LocalScrollTitles provides scrollTitles,
+    ) {
         Box(Modifier.fillMaxSize().recordTouches(touch)) {
             NovaContent(app, connection, openPlayerTick, demo)
         }
@@ -504,6 +509,8 @@ private fun SheetContent(
                 onChangeFolder = pickFolder,
                 onShowFolder = app.settings::showFolder,
                 onSkipMessaging = app.settings::setSkipMessaging,
+                scrollTitles = app.settings.scrollTitles.collectAsState().value,
+                onScrollTitles = app.settings::setScrollTitles,
                 onRescan = app.library::rescan,
                 onTheme = app.settings::setTheme,
                 onShowVideo = app.settings::setShowVideo,
@@ -569,9 +576,9 @@ private fun MiniPlayer(connection: PlayerConnection, track: Track, backdrop: Bac
         ) {
             Artwork(track.file.art, size = 48.dp, video = track.file.isVideo, shape = RoundedCornerShape(Radius.thumb))
             Column(Modifier.weight(1f)) {
-                Text(now.title, style = GlassType.headline, color = glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                MarqueeText(now.title, GlassType.headline, glass.textPrimary)
                 val line = now.artist ?: track.album
-                if (line != null) Text(line, style = GlassType.caption, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (line != null) MarqueeText(line, GlassType.caption, glass.textSecondary)
             }
             PlainIconButton(if (state.playWhenReady) NovaIcon.PAUSE else NovaIcon.PLAY, if (state.playWhenReady) "Pause" else "Play", {
                 playWave()
