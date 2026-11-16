@@ -52,10 +52,17 @@ capture player-video-tracklist-dark
 shot player-video-light 10 --es theme light --es play mix --es open player
 shot fullscreen 12 --es theme dark --es play mix --es open fullscreen
 adb shell input tap 1200 540
-sleep 1
+# A single tap waits briefly in case it is the first of a double tap.
+sleep 2
 capture fullscreen-controls
 shot player-album-dark 10 --es theme dark --es play album --es open player
 shot player-art-dark 10 --es theme dark --es play mix --es open art
+# A double tap on the right of the picture: 10 s forward, with its mark and a wave.
+open_app --es theme dark --es play album --es open player
+sleep 10
+adb shell "input tap 800 700; input tap 800 700"
+sleep 0.4
+capture player-double-tap-dark
 # Up next, below the player: swipe up for all of it.
 shot player-up-next-dark 10 --es theme dark --es play album --es open player
 adb shell input swipe 540 2000 540 600 400
