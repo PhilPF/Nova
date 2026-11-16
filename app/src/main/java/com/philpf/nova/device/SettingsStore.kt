@@ -30,6 +30,13 @@ class SettingsStore(context: Context) {
     private val _showVideo = MutableStateFlow(prefs.getBoolean(KEY_SHOW_VIDEO, true))
     val showVideo: StateFlow<Boolean> = _showVideo.asStateFlow()
 
+    /** The colour of the last song's art (ARGB), so the app opens in it; 0 for none. */
+    var lastSongColor: Int
+        get() = prefs.getInt(KEY_SONG_COLOR, 0)
+        set(value) {
+            prefs.edit().putInt(KEY_SONG_COLOR, value).apply()
+        }
+
     fun setTheme(mode: ThemeMode) {
         _theme.value = mode
         prefs.edit().putString(KEY_THEME, mode.name).apply()
@@ -66,5 +73,6 @@ class SettingsStore(context: Context) {
         const val KEY_HIDDEN = "hiddenFolders"
         const val KEY_SKIP_MESSAGING = "skipMessaging"
         const val KEY_SHOW_VIDEO = "showVideo"
+        const val KEY_SONG_COLOR = "songColor"
     }
 }

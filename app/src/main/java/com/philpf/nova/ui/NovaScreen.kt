@@ -57,6 +57,7 @@ import com.philpf.nova.ui.glass.Backdrop
 import com.philpf.nova.ui.glass.GlassSurface
 import com.philpf.nova.ui.glass.backdropSource
 import com.philpf.nova.ui.glass.rememberBackdrop
+import com.philpf.nova.ui.theme.DarkGlass
 import com.philpf.nova.ui.theme.GlassType
 import com.philpf.nova.ui.theme.LocalGlass
 import com.philpf.nova.ui.theme.Radius
@@ -97,17 +98,36 @@ fun NovaScreen(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, 
     val base = LocalGlass.current
     val library by app.library.library.collectAsState()
     val art = connection.state.mediaId?.let { library.track(it) }?.file?.art
-    val artColor = rememberArtColors(art).firstOrNull()
-    val accent = remember(artColor, base.isDark) {
-        artColor?.let { Color(ArtColors.accent(it.toArgb(), base.isDark)) } ?: base.accent
+    // The song's colour; until its art is read (or with none playing), the last one, so the
+    // app opens in the colour it was left in.
+    val saved = remember { app.settings.lastSongColor.takeIf { it != 0 } }
+    val artColor = rememberArtColors(art).firstOrNull()?.toArgb()
+    LaunchedEffect(artColor) { if (artColor != null) app.settings.lastSongColor = artColor }
+    val songColor = artColor ?: saved.takeIf { connection.state.mediaId == null || art != null }
+    val accent = remember(songColor, base.isDark) { songColor?.let { Color(ArtColors.accent(it, base.isDark)) } ?: base.accent }
+    // The full-screen video is always dark: its accent is the dark theme's.
+    val darkAccent = remember(songColor) { songColor?.let { Color(ArtColors.accent(it, true)) } ?: DarkGlass.accent }
+
+    // Opening the app with nothing playing: the last song, where it was left, paused.
+    val loaded by app.library.loaded.collectAsState()
+    var restored by remember { mutableStateOf(false) }
+    LaunchedEffect(loaded, connection.controller) {
+        if (!restored && loaded && connection.controller != null && library.files.isNotEmpty() && demo == null) {
+            restored = true
+            connection.restore(library)
+        }
     }
+
     val touch = LocalTouch.current
-    CompositionLocalProvider(LocalGlass provides base.copy(accent = accent)) {
+    CompositionLocalProvider(LocalGlass provides base.copy(accent = accent), LocalDarkAccent provides darkAccent) {
         Box(Modifier.fillMaxSize().recordTouches(touch)) {
             NovaContent(app, connection, openPlayerTick, demo)
         }
     }
 }
+
+/** The accent on the always-dark full-screen video. */
+val LocalDarkAccent = androidx.compose.runtime.staticCompositionLocalOf { DarkGlass.accent }
 
 @Composable
 private fun NovaContent(app: NovaApp, connection: PlayerConnection, openPlayerTick: Int, demo: DemoScript?) {
@@ -213,6 +233,21 @@ private fun NovaContent(app: NovaApp, connection: PlayerConnection, openPlayerTi
     )
 
     BackHandler(enabled = playerOpen && sheet == null && fullscreen == Fullscreen.OFF) { playerOpen = false }
+
+    // Picture in picture: leaving the app while a video shows and plays puts it in a small
+    // window over other apps; in that window, only the video is drawn.
+    val pip = LocalPip.current
+    val videoOnScreen = state.hasVideo && showVideo && (playerOpen || fullscreen != Fullscreen.OFF)
+    LaunchedEffect(videoOnScreen, state.isPlaying, state.videoSize) {
+        val v = state.videoSize
+        pip.update(v.width.takeIf { it > 0 } ?: 16, v.height.takeIf { it > 0 } ?: 9, videoOnScreen && state.isPlaying, state.isPlaying)
+    }
+    if (pip.active) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            VideoSurface(connection.controller, Modifier.fillMaxSize())
+        }
+        return
+    }
 
     val root = rememberBackdrop()
     Box(Modifier.fillMaxSize()) {

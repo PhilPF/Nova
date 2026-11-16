@@ -239,3 +239,23 @@ class TracklistOrderTest {
         assertEquals(map, FileEditsCodec.decode(FileEditsCodec.encode(map)))
     }
 }
+
+class SkipRuleTest {
+    private fun of(pos: Long, dur: Long, delta: Long, next: Boolean = true, prev: Boolean = true) = SkipRule.of(pos, dur, delta, next, prev)
+
+    @Test fun forward() {
+        assertEquals(SkipAction.Seek(40_000), of(30_000, 200_000, 10_000))
+        assertEquals(SkipAction.Next, of(195_000, 200_000, 10_000))
+        assertEquals(SkipAction.Next, of(189_600, 200_000, 10_000)) // within half a second of the end
+        assertEquals(SkipAction.Seek(200_000), of(195_000, 200_000, 10_000, next = false))
+        assertEquals(SkipAction.Seek(15_000), of(5_000, 0, 10_000)) // length unknown
+    }
+
+    @Test fun backward() {
+        assertEquals(SkipAction.Seek(20_000), of(30_000, 200_000, -10_000))
+        assertEquals(SkipAction.Seek(0), of(10_000, 200_000, -10_000))
+        assertEquals(SkipAction.Seek(0), of(7_000, 200_000, -10_000)) // 3 s too far: still this song
+        assertEquals(SkipAction.Previous, of(6_999, 200_000, -10_000)) // further: the previous one
+        assertEquals(SkipAction.Seek(0), of(2_000, 200_000, -10_000, prev = false))
+    }
+}

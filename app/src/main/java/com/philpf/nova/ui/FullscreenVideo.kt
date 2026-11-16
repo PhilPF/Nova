@@ -39,6 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import com.philpf.nova.core.SkipRule
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,6 +75,11 @@ fun FullscreenVideo(connection: PlayerConnection, library: Library, lockLandscap
     var controls by remember { mutableStateOf(true) }
     var touched by remember { mutableIntStateOf(0) }
     var tracklistOpen by remember { mutableStateOf(false) }
+    // The song's colour, readable on the black around the video.
+    val accent = LocalDarkAccent.current
+    val waves = rememberWaves()
+    var skipHint by remember { mutableStateOf<SkipHint?>(null) }
+    val pip = LocalPip.current
 
     val activity = LocalContext.current as? Activity
     val view = LocalView.current
@@ -100,17 +109,38 @@ fun FullscreenVideo(connection: PlayerConnection, library: Library, lockLandscap
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                controls = !controls
-                touched++
+            // A tap shows or hides the controls; a double tap on either half skips 10 s.
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        controls = !controls
+                        touched++
+                    },
+                    onDoubleTap = { at ->
+                        val forward = at.x > size.width / 2f
+                        connection.skipBy(if (forward) SkipRule.STEP_MS else -SkipRule.STEP_MS)
+                        waves.start(accent, at)
+                        skipHint = SkipHint(forward, System.nanoTime())
+                        touched++
+                    },
+                )
             },
     ) {
         VideoSurface(connection.controller, Modifier.fillMaxSize())
+        // Over the video: its surface would cover anything drawn under it.
+        Box(Modifier.matchParentSize().waves(waves))
+        SkipHintView(skipHint, Modifier.matchParentSize().padding(horizontal = 48.dp))
 
         AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
             Box(
                 Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.6f), 0.3f to Color.Transparent, 0.65f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.75f)),
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.6f),
+                        0.3f to Color.Transparent,
+                        0.65f to Color.Transparent,
+                        // A faint tint of the song's colour in the shade under the controls.
+                        1f to lerp(Color.Black, accent, 0.16f).copy(alpha = 0.8f),
+                    ),
                 ),
             ) {
                 Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = Space.margin, vertical = Space.small)) {
@@ -118,8 +148,17 @@ fun FullscreenVideo(connection: PlayerConnection, library: Library, lockLandscap
                         PlainIconButton(NovaIcon.FULLSCREEN_EXIT, "Leave full screen", onExit, Color.White)
                         Column(Modifier.weight(1f).padding(horizontal = Space.small)) {
                             Text(now?.title ?: "", style = GlassType.headline, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            val line = listOfNotNull(now?.artist, if (now?.chapterTrack != null) "${now.chapterIndex + 1} of ${now.chapters.size} · ${now.track.file.title}" else null).joinToString(" · ")
-                            if (line.isNotEmpty()) Text(line, style = GlassType.caption, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (now?.chapterTrack != null) {
+                                    Text("${now.chapterIndex + 1} of ${now.chapters.size}", style = GlassType.caption, color = accent, maxLines = 1)
+                                    Text("  ·  ", style = GlassType.caption, color = Color.White.copy(alpha = 0.5f))
+                                }
+                                val line = listOfNotNull(now?.artist, now?.chapterTrack?.album).joinToString(" · ")
+                                Text(line, style = GlassType.caption, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        if (pip.available) {
+                            PlainIconButton(NovaIcon.PIP, "Picture in picture", { pip.enter() }, Color.White)
                         }
                         if (now != null && now.chapters.isNotEmpty()) {
                             PlainIconButton(NovaIcon.LIST, "Tracklist", { tracklistOpen = !tracklistOpen; touched++ }, Color.White)
@@ -132,7 +171,7 @@ fun FullscreenVideo(connection: PlayerConnection, library: Library, lockLandscap
                         markers = now?.chapters?.map { it.startMs }.orEmpty(),
                         onSeek = { connection.seekTo(it); touched++ },
                         trackColor = Color.White.copy(alpha = 0.25f),
-                        fillColor = Color.White,
+                        fillColor = accent,
                         markerColor = Color.Black,
                         timeColor = Color.White.copy(alpha = 0.8f),
                         modifier = Modifier.fillMaxWidth(),
@@ -165,7 +204,7 @@ fun FullscreenVideo(connection: PlayerConnection, library: Library, lockLandscap
                     Column(Modifier.verticalScroll(rememberScrollState()).padding(Space.inset)) {
                         Text("TRACKLIST", style = GlassType.section, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(Space.inset))
                         androidx.compose.runtime.CompositionLocalProvider(
-                            com.philpf.nova.ui.theme.LocalGlass provides com.philpf.nova.ui.theme.DarkGlass,
+                            com.philpf.nova.ui.theme.LocalGlass provides com.philpf.nova.ui.theme.DarkGlass.copy(accent = accent),
                         ) {
                             Tracklist(file, now.chapterIndex) { connection.seekTo(now.chapters[it].startMs); touched++ }
                         }

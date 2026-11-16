@@ -101,7 +101,7 @@ class NowPlayingWidget : AppWidgetProvider() {
         )
 
         /** A media button sent to the playback service, which hands it to its session. */
-        private fun mediaButton(context: Context, keyCode: Int): PendingIntent = PendingIntent.getService(
+        fun mediaButton(context: Context, keyCode: Int): PendingIntent = PendingIntent.getService(
             context, keyCode,
             Intent(Intent.ACTION_MEDIA_BUTTON)
                 .setComponent(ComponentName(context, PlaybackService::class.java))

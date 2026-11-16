@@ -23,8 +23,16 @@ Requires **Android 12 or newer** (the glass panels blur what is behind them with
   player down to close it. Below it, peeking at the bottom, is what plays next: swipe up for
   all of it, drag a song by its handle to move it. It plays in the background with the usual notification, lock-screen and headset controls
   (a Media3 media session).
-- **Videos.** A video plays in the art's place, or full screen (landscape for wide videos; turning
-  the phone also goes full screen). Settings or the player's chips switch a video to its art.
+- **Videos.** A video plays in the art's place at its own shape (the page around it eases to
+  the new size), full screen (landscape for wide videos; turning the phone also goes full
+  screen), or in picture in picture, over other apps: from its button, or by leaving the app
+  while a video plays. A button in its corner switches a video to its art.
+- **Double tap** the left or right of the picture (or the full-screen video) to skip 10 s back
+  or forward. Forward past the end goes to the next song; back past the start by up to 3 s goes
+  to the start, further to the previous song (`core/SkipRule`); a song inside a long video counts
+  as a song of its own. The screen stays on while the player is open.
+- **Where you left off.** Opening the app again brings back the last queue at the song and the
+  time it was left, paused, in that song's colour.
 - **Widget.** The song playing with its art on the home screen: square, the art edge to edge
   with play/pause; wide, the art blurred behind with previous, play/pause and next. Its buttons
   work with the app closed: Play picks up the last queue where it was.

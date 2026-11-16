@@ -3,6 +3,15 @@ package com.philpf.nova.ui
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalView
+import com.philpf.nova.core.SkipRule
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ColumnScope
@@ -171,6 +180,13 @@ fun PlayerScreen(
     )
     LaunchedEffect(state.index, state.queue) { preloadNeighbours(state, library) }
 
+    // The screen stays on while the player is open.
+    val view = LocalView.current
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
+
     // Touches stop here, rather than reaching the library underneath.
     Box(
         Modifier
@@ -203,7 +219,8 @@ fun PlayerScreen(
             val peek = 76.dp
             val pageHeight = maxHeight - peek - bottomInset
             // The picture: a square as wide as the page (less a small margin), unless the page is
-            // too short for it and the controls; the same for every song, so nothing moves.
+            // too short for it and the controls. A video takes its own shape in that width, so
+            // the page is shorter and the panel below rises; the change is animated.
             val artSize = minOf(maxWidth - 32.dp, pageHeight - top - 64.dp - BottomBlockHeight - 24.dp, 560.dp).coerceAtLeast(160.dp)
             val panelMin = maxHeight - top - bottomInset - 120.dp
 
@@ -216,7 +233,7 @@ fun PlayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 SplitColumn(
-                    minHeight = pageHeight,
+                    minHeight = 0.dp,
                     top = {
                         Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
                         Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -233,41 +250,55 @@ fun PlayerScreen(
                         }
                     },
                     middle = {
-                        // The picture, or the video in its place (centred in the same square, at its
-                        // own shape); swipe it sideways to skip.
+                        // The picture, or the video in its place at its own shape; swipe it sideways
+                        // to skip a song, double tap its left or right for 10 s back or forward.
                         val isVideoFile = track?.file?.isVideo == true
                         val video = state.hasVideo && showVideo && videoAllowed
-                        Box(Modifier.size(artSize), contentAlignment = Alignment.Center) {
+                        val aspect = if (video) videoAspect(state) else 1f
+                        val mediaWidth by animateDpAsState(if (aspect >= 1f) artSize else artSize * aspect, tween(320, easing = FastOutSlowInEasing), label = "mediaWidth")
+                        val mediaHeight by animateDpAsState(if (aspect >= 1f) artSize / aspect else artSize, tween(320, easing = FastOutSlowInEasing), label = "mediaHeight")
+                        val mediaWaves = rememberWaves()
+                        var skipHint by remember { mutableStateOf<SkipHint?>(null) }
+                        Box(
+                            Modifier
+                                .size(mediaWidth, mediaHeight)
+                                .skipOffset(swipe, move = !video)
+                                .clip(RoundedCornerShape(Radius.panel)),
+                        ) {
+                            Crossfade(targetState = video, label = "media") { showingVideo ->
+                                if (showingVideo) {
+                                    VideoSurface(connection.controller, Modifier.fillMaxSize())
+                                } else {
+                                    Artwork(art, Modifier.fillMaxSize(), size = artSize, shape = RoundedCornerShape(Radius.panel), video = isVideoFile, sizePx = 1000)
+                                }
+                            }
+                            // Over the video too, which would otherwise take the touches.
                             Box(
                                 Modifier
-                                    .then(
-                                        when {
-                                            !video -> Modifier.fillMaxSize()
-                                            videoAspect(state) >= 1f -> Modifier.fillMaxWidth().aspectRatio(videoAspect(state))
-                                            else -> Modifier.fillMaxHeight().aspectRatio(videoAspect(state))
-                                        },
-                                    )
-                                    .skipOffset(swipe, move = !video)
-                                    .clip(RoundedCornerShape(Radius.panel)),
-                            ) {
-                                Crossfade(targetState = video, label = "media") { showingVideo ->
-                                    if (showingVideo) {
-                                        VideoSurface(connection.controller, Modifier.fillMaxSize())
-                                    } else {
-                                        Artwork(art, Modifier.fillMaxSize(), size = artSize, shape = RoundedCornerShape(Radius.panel), video = isVideoFile, sizePx = 1000)
+                                    .matchParentSize()
+                                    .waves(mediaWaves)
+                                    .skipGesture(swipe)
+                                    .doubleTapToSkip { forward, at ->
+                                        connection.skipBy(if (forward) SkipRule.STEP_MS else -SkipRule.STEP_MS)
+                                        mediaWaves.start(glass.accent, at)
+                                        skipHint = SkipHint(forward, System.nanoTime())
+                                    },
+                            )
+                            SkipHintView(skipHint, Modifier.matchParentSize())
+                            // A video's own buttons, in its corner: art or video, picture in picture, full screen.
+                            if (isVideoFile && videoAllowed) {
+                                val pip = LocalPip.current
+                                Row(Modifier.align(Alignment.BottomEnd).padding(Space.gap), horizontalArrangement = Arrangement.spacedBy(Space.small)) {
+                                    GlassIconButton(onClick = { onShowVideo(!showVideo) }, label = if (showVideo) "Show the art" else "Show the video", size = 38.dp) {
+                                        Icon(if (showVideo) NovaIcon.IMAGE else NovaIcon.VIDEO, Color.White, Modifier.size(18.dp))
                                     }
-                                }
-                                // Over the video too, which would otherwise take the touches.
-                                Box(Modifier.matchParentSize().skipGesture(swipe))
-                                // A video's own buttons, in its corner: art or video, and full screen.
-                                if (isVideoFile && videoAllowed) {
-                                    Row(Modifier.align(Alignment.BottomEnd).padding(Space.gap), horizontalArrangement = Arrangement.spacedBy(Space.small)) {
-                                        GlassIconButton(onClick = { onShowVideo(!showVideo) }, label = if (showVideo) "Show the art" else "Show the video", size = 38.dp) {
-                                            Icon(if (showVideo) NovaIcon.IMAGE else NovaIcon.VIDEO, Color.White, Modifier.size(18.dp))
+                                    if (pip.available && video) {
+                                        GlassIconButton(onClick = { pip.enter() }, label = "Picture in picture", size = 38.dp) {
+                                            Icon(NovaIcon.PIP, Color.White, Modifier.size(19.dp))
                                         }
-                                        GlassIconButton(onClick = onFullscreen, label = "Full screen", size = 38.dp) {
-                                            Icon(NovaIcon.FULLSCREEN, Color.White, Modifier.size(20.dp))
-                                        }
+                                    }
+                                    GlassIconButton(onClick = onFullscreen, label = "Full screen", size = 38.dp) {
+                                        Icon(NovaIcon.FULLSCREEN, Color.White, Modifier.size(20.dp))
                                     }
                                 }
                             }
@@ -585,4 +616,43 @@ private fun BlurredArt(path: String?) {
             ),
         ),
     )
+}
+
+/** A double tap's skip, shown briefly over the picture. */
+class SkipHint(val forward: Boolean, val at: Long)
+
+/**
+ * Double taps on the left half (back) or the right half (forward), with where the tap was.
+ * Single taps and drags are left to the rest.
+ */
+fun Modifier.doubleTapToSkip(onSkip: (forward: Boolean, at: Offset) -> Unit): Modifier = pointerInput(Unit) {
+    detectTapGestures(onDoubleTap = { at -> onSkip(at.x > size.width / 2f, at) })
+}
+
+/** "‹‹ 10 s" on the left or "10 s ››" on the right, fading out. */
+@Composable
+fun SkipHintView(hint: SkipHint?, modifier: Modifier = Modifier, color: Color = Color.White) {
+    val alpha = remember { Animatable(0f) }
+    LaunchedEffect(hint?.at) {
+        if (hint == null) return@LaunchedEffect
+        alpha.snapTo(1f)
+        delay(350)
+        alpha.animateTo(0f, tween(450))
+    }
+    if (hint == null) return
+    Box(modifier.padding(horizontal = Space.section), contentAlignment = if (hint.forward) Alignment.CenterEnd else Alignment.CenterStart) {
+        Row(
+            Modifier
+                .graphicsLayer { this.alpha = alpha.value }
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.35f))
+                .padding(horizontal = Space.padding, vertical = Space.small),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.small),
+        ) {
+            if (!hint.forward) Icon(NovaIcon.REWIND, color, Modifier.size(20.dp))
+            Text("${SkipRule.STEP_MS / 1000} s", style = GlassType.headline, color = color)
+            if (hint.forward) Icon(NovaIcon.FORWARD, color, Modifier.size(20.dp))
+        }
+    }
 }

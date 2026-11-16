@@ -63,7 +63,10 @@ class PlaybackService : MediaSessionService() {
             .setCallback(Callback())
             .build()
         exo.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) = followChapters(isPlaying)
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                followChapters(isPlaying)
+                keepPosition(isPlaying)
+            }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 // Updating the metadata below is itself a transition, to the same item.
                 if (mediaItem?.mediaId == lastMediaId) return
@@ -91,6 +94,19 @@ class PlaybackService : MediaSessionService() {
     }
 
     private var widgetJob: Job? = null
+    private var positionJob: Job? = null
+
+    /** While playing, keeps the position every few seconds, for opening the app again there. */
+    private fun keepPosition(playing: Boolean) {
+        positionJob?.cancel()
+        if (!playing) return
+        positionJob = scope.launch {
+            while (isActive) {
+                delay(5_000)
+                ResumeStore.savePosition(this@PlaybackService, exo.currentMediaItemIndex, exo.currentPosition)
+            }
+        }
+    }
 
     /** Shows the song on the home-screen widget (its picture is decoded off the main thread). */
     private fun updateWidget() {

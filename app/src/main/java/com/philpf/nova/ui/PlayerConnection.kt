@@ -17,7 +17,12 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.philpf.nova.core.Chapter
 import com.philpf.nova.core.ChapterNav
+import com.philpf.nova.core.Chapters
+import com.philpf.nova.core.Library
+import com.philpf.nova.core.SkipAction
+import com.philpf.nova.core.SkipRule
 import com.philpf.nova.core.Track
+import com.philpf.nova.service.ResumeStore
 import com.philpf.nova.service.MediaItems
 import com.philpf.nova.service.PlaybackService
 
@@ -184,6 +189,48 @@ class PlayerConnection(private val context: Context) {
             c.hasPreviousMediaItem() -> c.seekToPreviousMediaItem()
             else -> c.seekTo(0)
         }
+    }
+
+    /**
+     * Skips [deltaMs] (double tap on the picture) by [SkipRule], within the song: for a song
+     * inside a long video, its own start and end, so past them is the next or previous song.
+     */
+    fun skipBy(deltaMs: Long) {
+        val c = controller ?: return
+        val chapters = currentChapters()
+        val position = c.currentPosition
+        val duration = c.duration.takeIf { it != C.TIME_UNSET } ?: 0
+        val i = Chapters.indexAt(chapters, position)
+        val start = if (i >= 0) chapters[i].startMs else 0
+        val end = if (i >= 0) Chapters.endOf(chapters, i, duration) else duration
+        val action = SkipRule.of(
+            positionMs = position - start,
+            durationMs = end - start,
+            deltaMs = deltaMs,
+            hasNext = (i >= 0 && i + 1 < chapters.size) || c.hasNextMediaItem(),
+            hasPrevious = i > 0 || c.hasPreviousMediaItem(),
+        )
+        seeks++
+        when (action) {
+            is SkipAction.Seek -> c.seekTo(start + action.ms)
+            SkipAction.Next -> if (i >= 0 && i + 1 < chapters.size) c.seekTo(chapters[i + 1].startMs) else c.seekToNextMediaItem()
+            SkipAction.Previous -> if (i > 0) c.seekTo(chapters[i - 1].startMs) else c.seekToPreviousMediaItem()
+        }
+    }
+
+    /**
+     * When the app opens with nothing loaded: the last queue, at the song and the time it was
+     * left, paused (kept by the playback service in [ResumeStore]).
+     */
+    fun restore(library: Library) {
+        val c = controller ?: return
+        if (c.mediaItemCount > 0) return
+        val saved = ResumeStore.load(context) ?: return
+        val tracks = saved.ids.mapNotNull { library.track(it) }
+        if (tracks.isEmpty()) return
+        val index = saved.index.coerceIn(tracks.indices)
+        c.setMediaItems(tracks.map(MediaItems::request), index, saved.positionMs)
+        c.prepare()
     }
 
     fun seekTo(ms: Long) {
