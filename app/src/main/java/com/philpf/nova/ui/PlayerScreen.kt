@@ -472,24 +472,45 @@ private fun UpNextPanel(
                 GroupHeader(SourceKind.TRACKLIST.label, now.track.file.title) {
                     PlainIconButton(NovaIcon.EDIT, "Edit the tracklist", { onEditTracklist(now.track.file) }, glass.textTertiary, size = 36.dp, iconSize = 16.dp)
                 }
-                restOfVideo.forEach { i ->
-                    val t = now.track.file.chapterTrack(i)
-                    UpNextRow(
-                        title = t.title,
-                        subtitle = t.artist,
-                        art = null,
-                        leading = Chapters.formatTime(t.startMs),
-                        onClick = { connection.seekTo(t.startMs) },
-                    )
+                val videoGuide = glass.textTertiary.copy(alpha = 0.4f)
+                Column(
+                    Modifier.drawBehind {
+                        val x = 1.dp.toPx()
+                        drawLine(videoGuide, Offset(x, 0f), Offset(x, size.height - Space.small.toPx()), strokeWidth = 1.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                    },
+                ) {
+                    restOfVideo.forEach { i ->
+                        val t = now.track.file.chapterTrack(i)
+                        UpNextRow(
+                            title = t.title,
+                            subtitle = t.artist,
+                            art = null,
+                            leading = Chapters.formatTime(t.startMs),
+                            onClick = { connection.seekTo(t.startMs) },
+                        )
+                    }
                 }
             }
+            val guide = glass.textTertiary.copy(alpha = 0.4f)
             for (block in blocks) {
                 val source = block.source
                 if (source != null) {
                     GroupHeader(source.kind.label, source.title) {
                         PlainIconButton(NovaIcon.CLOSE, "Remove “${source.title}” from the queue", { connection.removeAll(block.entries.map { it.index }) }, glass.textTertiary, size = 36.dp, iconSize = 16.dp)
                     }
+                } else {
+                    // A song on its own stands apart from the group before it.
+                    Spacer(Modifier.height(Space.small))
                 }
+                // A group's songs hang from its header by a thin line at their left.
+                Column(
+                    Modifier.drawBehind {
+                        if (source != null) {
+                            val x = 1.dp.toPx()
+                            drawLine(guide, Offset(x, 0f), Offset(x, size.height - Space.small.toPx()), strokeWidth = 1.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                        }
+                    },
+                ) {
                 for (e in block.entries) {
                     val file = library.track(e.mediaId)?.file
                     // A song on its own names where it came from.
@@ -538,6 +559,7 @@ private fun UpNextPanel(
                             modifier = Modifier.onGloballyPositioned { rowCenters[e.index] = it.positionInRoot().y + it.size.height / 2f },
                         )
                     }
+                }
                 }
             }
             if (state.upcoming.size > QUEUE_SHOWN) {
