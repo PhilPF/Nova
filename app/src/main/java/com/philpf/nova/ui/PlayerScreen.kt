@@ -549,6 +549,12 @@ private fun UpNextPanel(
 
 private const val QUEUE_SHOWN = 150
 
+private fun videoAspect(state: PlayerState): Float {
+    val v = state.videoSize
+    if (v.width <= 0 || v.height <= 0) return 16f / 9f
+    return (v.width * v.pixelWidthHeightRatio / v.height).coerceIn(0.75f, 2.4f)
+}
+
 /** A group's header in the next panel: what it is, its name, and a button. */
 @Composable
 private fun GroupHeader(kind: String, title: String, action: @Composable () -> Unit) {
