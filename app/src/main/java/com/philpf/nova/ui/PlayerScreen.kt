@@ -3,6 +3,13 @@ package com.philpf.nova.ui
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import androidx.compose.animation.Crossfade
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import com.philpf.nova.core.QueueEntry
+import com.philpf.nova.core.QueueSections
+import com.philpf.nova.core.SourceKind
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -222,7 +229,6 @@ fun PlayerScreen(
             // too short for it and the controls. A video takes its own shape in that width, so
             // the page is shorter and the panel below rises; the change is animated.
             val artSize = minOf(maxWidth - 32.dp, pageHeight - top - 64.dp - BottomBlockHeight - 24.dp - Space.section, 560.dp).coerceAtLeast(160.dp)
-            val panelMin = maxHeight - top - bottomInset - 120.dp
 
             Column(
                 Modifier
@@ -364,7 +370,6 @@ fun PlayerScreen(
                     library = library,
                     now = now,
                     onEditTracklist = onEditTracklist,
-                    minHeight = panelMin,
                 )
                 Spacer(Modifier.height(Space.section))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -408,8 +413,12 @@ private fun SplitColumn(
 }
 
 /**
- * What plays next, and a long video's tracklist, as two tabs when there is a tracklist (it
- * opens on the tracklist when nothing follows the video).
+ * What plays next, in the order it will play, as one list: first, when a long video plays
+ * whole, its songs still to come; then the queue, its songs grouped by what they were added
+ * as (an album, a playlist, a video's tracklist…) under a header that also takes the whole
+ * group out. A song on its own names where it came from. Songs move by their handle (not
+ * while shuffling: the order shown is then not the queue's) and leave by their ×. The panel is
+ * as tall as what it lists.
  */
 @Composable
 private fun UpNextPanel(
@@ -418,15 +427,9 @@ private fun UpNextPanel(
     library: Library,
     now: NowPlaying?,
     onEditTracklist: (MediaFile) -> Unit,
-    minHeight: Dp,
 ) {
     val glass = LocalGlass.current
     val state = connection.state
-    val chapters = now?.chapters.orEmpty()
-    val following = (state.queue.size - state.index - 1).coerceAtLeast(0)
-    var tab by remember(state.mediaId) { mutableIntStateOf(if (chapters.isNotEmpty() && following == 0) 1 else 0) }
-    if (chapters.isEmpty() && tab != 0) tab = 0
-
     // A wave of the new song's colour each time a song starts.
     val waves = rememberWaves()
     val touch = LocalTouch.current
@@ -438,25 +441,107 @@ private fun UpNextPanel(
         // From where the screen was touched to change it (a swipe, Next), else from the top.
         waves.startAtTouch(waveColor(now?.track?.file?.art, glass.accent), touch, 0.5f, 0f)
     }
-    GlassSurface(backdrop, Modifier.fillMaxWidth().heightIn(min = minHeight), shape = RoundedCornerShape(Radius.panel)) {
+
+    val entries = remember(state.queue) {
+        state.queue.mapIndexed { i, q -> QueueEntry(i, q.mediaId, q.title, q.artist, q.source) }
+    }
+    val blocks = remember(entries, state.upcoming) { QueueSections.upcoming(entries, state.upcoming.take(QUEUE_SHOWN)) }
+    val restOfVideo = now?.takeIf { it.chapters.isNotEmpty() }?.let { n -> (n.chapterIndex + 1 until n.chapters.size).toList() }.orEmpty()
+    val count = restOfVideo.size + state.upcoming.size
+
+    // Moving a song: where each row is, which one moves and how far.
+    val rowCenters = remember { mutableStateMapOf<Int, Float>() }
+    var dragging by remember { mutableIntStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val canMove = !state.shuffle
+    fun dropTarget(): Int {
+        val from = rowCenters[dragging] ?: return dragging
+        val y = from + dragOffset
+        return state.upcoming.filter { it in rowCenters }.minByOrNull { kotlin.math.abs((rowCenters[it] ?: 0f) - y) } ?: dragging
+    }
+    val target = if (dragging >= 0) dropTarget() else -1
+
+    GlassSurface(backdrop, Modifier.fillMaxWidth(), shape = RoundedCornerShape(Radius.panel)) {
         Box(Modifier.matchParentSize().waves(waves))
-        // An even margin all round, so what is inside (the tabs, the rows' highlights) has
-        // corners that follow the panel's: its radius less the margin.
         Column(Modifier.padding(Space.inset)) {
-            if (chapters.isNotEmpty()) {
-                SegmentedControl(listOf("Up next", "Tracklist · ${chapters.size}"), tab, { tab = it })
-                Spacer(Modifier.height(Space.small))
-            } else {
-                SectionLabel(if (following > 0) "Up next · ${songCount(following)}" else "Up next", Modifier.padding(top = Space.gap))
+            SectionLabel(if (count > 0) "Up next · ${songCount(count)}" else "Up next", Modifier.padding(top = Space.gap))
+            if (count == 0) {
+                Text("Nothing after this song.", style = GlassType.callout, color = glass.textSecondary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
             }
-            if (tab == 1 && now != null) {
-                Tracklist(now.track.file, now.chapterIndex) { connection.seekTo(chapters[it].startMs) }
-                ActionRow(NovaIcon.EDIT, "Edit the tracklist", { onEditTracklist(now.track.file) })
-            } else {
-                QueueList(connection, library)
-                if (now != null && chapters.isEmpty() && now.track.file.isVideo && !now.track.isClip) {
-                    ActionRow(NovaIcon.LIST, "Add a tracklist to this video", { onEditTracklist(now.track.file) })
+            if (now != null && restOfVideo.isNotEmpty()) {
+                GroupHeader(SourceKind.TRACKLIST.label, now.track.file.title) {
+                    PlainIconButton(NovaIcon.EDIT, "Edit the tracklist", { onEditTracklist(now.track.file) }, glass.textTertiary, size = 36.dp, iconSize = 16.dp)
                 }
+                restOfVideo.forEach { i ->
+                    val t = now.track.file.chapterTrack(i)
+                    UpNextRow(
+                        title = t.title,
+                        subtitle = t.artist,
+                        art = null,
+                        leading = Chapters.formatTime(t.startMs),
+                        onClick = { connection.seekTo(t.startMs) },
+                    )
+                }
+            }
+            for (block in blocks) {
+                val source = block.source
+                if (source != null) {
+                    GroupHeader(source.kind.label, source.title) {
+                        PlainIconButton(NovaIcon.CLOSE, "Remove “${source.title}” from the queue", { connection.removeAll(block.entries.map { it.index }) }, glass.textTertiary, size = 36.dp, iconSize = 16.dp)
+                    }
+                }
+                for (e in block.entries) {
+                    val file = library.track(e.mediaId)?.file
+                    // A song on its own names where it came from.
+                    val from = e.source?.takeIf { source == null }?.let { "${it.kind.label}: ${it.title}" }
+                    key(e.index, e.mediaId) {
+                        UpNextRow(
+                            title = e.title,
+                            subtitle = listOfNotNull(e.artist, from).joinToString(" · ").ifEmpty { null },
+                            art = file?.art,
+                            video = file?.isVideo == true,
+                            onClick = { connection.skipTo(e.index) },
+                            onRemove = { connection.removeAt(e.index) },
+                            dragHandle = if (canMove) {
+                                Modifier.pointerInput(e.index) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            dragging = e.index
+                                            dragOffset = 0f
+                                        },
+                                        onDragEnd = {
+                                            val to = dropTarget()
+                                            if (dragging >= 0 && to != dragging) connection.moveItem(dragging, to)
+                                            dragging = -1
+                                            dragOffset = 0f
+                                        },
+                                        onDragCancel = {
+                                            dragging = -1
+                                            dragOffset = 0f
+                                        },
+                                    ) { change, amount ->
+                                        change.consume()
+                                        dragOffset += amount.y
+                                    }
+                                }
+                            } else {
+                                null
+                            },
+                            moving = e.index == dragging,
+                            offset = if (e.index == dragging) dragOffset else 0f,
+                            // Where a moved song will land: a line above or below the row it takes the place of.
+                            dropLine = when {
+                                dragging < 0 || e.index != target || target == dragging -> 0
+                                target < dragging -> -1
+                                else -> 1
+                            },
+                            modifier = Modifier.onGloballyPositioned { rowCenters[e.index] = it.positionInRoot().y + it.size.height / 2f },
+                        )
+                    }
+                }
+            }
+            if (state.upcoming.size > QUEUE_SHOWN) {
+                Text("and ${state.upcoming.size - QUEUE_SHOWN} more", style = GlassType.caption, color = glass.textTertiary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
             }
         }
     }
@@ -464,99 +549,70 @@ private fun UpNextPanel(
 
 private const val QUEUE_SHOWN = 150
 
-/**
- * The queue from the song playing on. Drag a song by its handle to move it; the song playing
- * stays where it is.
- */
+/** A group's header in the next panel: what it is, its name, and a button. */
 @Composable
-private fun QueueList(connection: PlayerConnection, library: Library) {
+private fun GroupHeader(kind: String, title: String, action: @Composable () -> Unit) {
     val glass = LocalGlass.current
-    val state = connection.state
-    val start = state.index.coerceAtLeast(0)
-    val last = minOf(state.queue.size - 1, start + QUEUE_SHOWN)
-    if (state.queue.isEmpty()) {
-        Text("Nothing in the queue.", style = GlassType.body, color = glass.textSecondary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
-        return
-    }
-    val rowHeight = 60.dp
-    val rowPx = with(LocalDensity.current) { rowHeight.toPx() }
-    var dragging by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val target = if (dragging < 0) -1 else (dragging + (dragOffset / rowPx).roundToInt()).coerceIn(start + 1, last)
-
-    for (i in start..last) {
-        val item = state.queue[i]
-        val current = i == start
-        val shift = when {
-            dragging < 0 || i == dragging -> 0f
-            i in (dragging + 1)..target -> -rowPx
-            i in target until dragging -> rowPx
-            else -> 0f
-        }
-        key(item.mediaId, i) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(rowHeight)
-                    .zIndex(if (i == dragging) 1f else 0f)
-                    .graphicsLayer { translationY = if (i == dragging) dragOffset else shift }
-                    .clip(RoundedCornerShape(Radius.panel - Space.inset))
-                    .background(if (current) glass.controlFillSelected else if (i == dragging) glass.controlFill else Color.Transparent)
-                    .clickable { connection.skipTo(i) }
-                    .padding(horizontal = Space.inset),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.gap),
-            ) {
-                val file = library.track(item.mediaId)?.file
-                Artwork(file?.art, size = 42.dp, video = file?.isVideo == true)
-                Column(Modifier.weight(1f)) {
-                    Text(item.title, style = GlassType.body, color = if (current) glass.accent else glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (item.artist != null) Text(item.artist, style = GlassType.caption, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                if (current) {
-                    Icon(NovaIcon.NOTE, glass.accent, Modifier.size(18.dp))
-                } else {
-                    PlainIconButton(NovaIcon.CLOSE, "Remove from the queue", { connection.removeAt(i) }, glass.textTertiary, size = 36.dp, iconSize = 16.dp)
-                    Box(
-                        Modifier
-                            .size(40.dp)
-                            .pointerInput(i, start, last) {
-                                detectDragGestures(
-                                    onDragStart = {
-                                        dragging = i
-                                        dragOffset = 0f
-                                    },
-                                    onDragEnd = {
-                                        val to = (dragging + (dragOffset / rowPx).roundToInt()).coerceIn(start + 1, last)
-                                        if (dragging >= 0 && to != dragging) connection.moveItem(dragging, to)
-                                        dragging = -1
-                                        dragOffset = 0f
-                                    },
-                                    onDragCancel = {
-                                        dragging = -1
-                                        dragOffset = 0f
-                                    },
-                                ) { change, amount ->
-                                    change.consume()
-                                    dragOffset += amount.y
-                                }
-                            }
-                            .semantics { contentDescription = "Drag to move" },
-                        contentAlignment = Alignment.Center,
-                    ) { Icon(NovaIcon.DRAG, glass.textSecondary, Modifier.size(22.dp)) }
-                }
-            }
-        }
-    }
-    if (state.queue.size - 1 > last) {
-        Text("and ${state.queue.size - 1 - last} more", style = GlassType.caption, color = glass.textTertiary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
+    Row(Modifier.fillMaxWidth().padding(start = Space.inset, top = Space.gap), verticalAlignment = Alignment.CenterVertically) {
+        Text(kind.uppercase(), style = GlassType.section, color = glass.accent)
+        Text("  ·  ", style = GlassType.section, color = glass.textTertiary)
+        Text(title, style = GlassType.callout, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        action()
     }
 }
 
-private fun videoAspect(state: PlayerState): Float {
-    val v = state.videoSize
-    if (v.width <= 0 || v.height <= 0) return 16f / 9f
-    return (v.width * v.pixelWidthHeightRatio / v.height).coerceIn(0.75f, 2.4f)
+/** A song in the next panel. */
+@Composable
+private fun UpNextRow(
+    title: String,
+    subtitle: String?,
+    art: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    video: Boolean = false,
+    leading: String? = null,
+    onRemove: (() -> Unit)? = null,
+    dragHandle: Modifier? = null,
+    moving: Boolean = false,
+    offset: Float = 0f,
+    dropLine: Int = 0,
+) {
+    val glass = LocalGlass.current
+    val lineColor = glass.accent
+    Row(
+        modifier
+            .fillMaxWidth()
+            .zIndex(if (moving) 1f else 0f)
+            .graphicsLayer { translationY = offset }
+            .drawBehind {
+                if (dropLine != 0) {
+                    val y = if (dropLine < 0) 0f else size.height
+                    drawLine(lineColor, Offset(Space.inset.toPx(), y), Offset(size.width - Space.inset.toPx(), y), strokeWidth = 2.dp.toPx())
+                }
+            }
+            .clip(RoundedCornerShape(Radius.panel - Space.inset))
+            .background(if (moving) glass.controlFillSelected else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = Space.inset, vertical = Space.small),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.gap),
+    ) {
+        if (leading != null) {
+            Text(leading, style = GlassType.caption, color = glass.textTertiary, modifier = Modifier.width(44.dp))
+        } else {
+            Artwork(art, size = 42.dp, video = video)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = GlassType.body, color = glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle != null) Text(subtitle, style = GlassType.caption, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (onRemove != null) PlainIconButton(NovaIcon.CLOSE, "Remove from the queue", onRemove, glass.textTertiary, size = 36.dp, iconSize = 16.dp)
+        if (dragHandle != null) {
+            Box(dragHandle.size(36.dp).semantics { contentDescription = "Drag to move" }, contentAlignment = Alignment.Center) {
+                Icon(NovaIcon.DRAG, glass.textSecondary, Modifier.size(22.dp))
+            }
+        }
+    }
 }
 
 /** A long video's songs, the one playing marked; tapping one plays from its start. */
@@ -569,8 +625,8 @@ fun Tracklist(file: MediaFile, current: Int, onPick: (Int) -> Unit) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(Radius.panel - Space.inset))
-                .background(if (playing) glass.controlFillSelected else Color.Transparent)
+                .clip(RoundedCornerShape(Radius.row))
+                .playingMark(playing, glass.accent)
                 .clickable { onPick(i) }
                 .padding(horizontal = Space.inset, vertical = Space.small),
             verticalAlignment = Alignment.CenterVertically,
@@ -581,7 +637,6 @@ fun Tracklist(file: MediaFile, current: Int, onPick: (Int) -> Unit) {
                 Text(t.title, style = GlassType.body, color = if (playing) glass.accent else glass.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (t.artist != null) Text(t.artist, style = GlassType.caption, color = glass.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (playing) Icon(NovaIcon.NOTE, glass.accent, Modifier.size(16.dp))
         }
     }
 }

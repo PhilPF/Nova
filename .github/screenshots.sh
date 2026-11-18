@@ -67,6 +67,10 @@ adb shell "input tap 800 700; input tap 800 700"
 sleep 0.4
 capture player-double-tap-dark
 # Up next, below the player: swipe up for all of it.
+shot player-queue-groups-dark 10 --es theme dark --es play queue --es open player
+adb shell input swipe 540 2000 540 500 400
+sleep 2
+capture player-queue-groups-dark
 shot player-up-next-dark 10 --es theme dark --es play album --es open player
 adb shell input swipe 540 2000 540 600 400
 sleep 2

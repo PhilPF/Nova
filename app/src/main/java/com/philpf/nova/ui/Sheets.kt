@@ -65,7 +65,14 @@ fun PlayShuffleRow(onPlay: () -> Unit, onShuffle: () -> Unit) {
 }
 
 @Composable
-fun AlbumSheet(album: Album, playingId: String?, play: (List<Track>, Int, Boolean) -> Unit, onMore: (Track) -> Unit) {
+fun AlbumSheet(
+    album: Album,
+    playingId: String?,
+    play: (List<Track>, Int, Boolean) -> Unit,
+    onMore: (Track) -> Unit,
+    onPlayNext: () -> Unit = {},
+    onAddToQueue: () -> Unit = {},
+) {
     val minutes = album.tracks.sumOf { it.durationMs } / 60_000
     if (sheetHeader {
             SheetHeader(album.title, listOfNotNull(album.artist, album.year?.toString(), "${songCount(album.tracks.size)}, $minutes min").joinToString(" · "), album.art)
@@ -75,10 +82,27 @@ fun AlbumSheet(album: Album, playingId: String?, play: (List<Track>, Int, Boolea
     album.tracks.forEachIndexed { i, t ->
         TrackRow(t, t.mediaId == playingId, { play(album.tracks, i, false) }, { onMore(t) }, number = (t.file.trackNumber ?: (i + 1)).toString(), subtitle = t.artist.takeIf { it != album.artist } ?: "")
     }
+    QueueActions(onPlayNext, onAddToQueue)
+}
+
+/** Play next and Add to queue, for a whole album, artist, playlist or video. */
+@Composable
+fun QueueActions(onPlayNext: () -> Unit, onAddToQueue: () -> Unit) {
+    Spacer(Modifier.height(Space.small))
+    ActionRow(NovaIcon.NEXT, "Play next", onPlayNext)
+    ActionRow(NovaIcon.QUEUE, "Add to queue", onAddToQueue)
 }
 
 @Composable
-fun ArtistSheet(artist: Artist, playingId: String?, play: (List<Track>, Int, Boolean) -> Unit, onMore: (Track) -> Unit, openAlbum: (Album) -> Unit) {
+fun ArtistSheet(
+    artist: Artist,
+    playingId: String?,
+    play: (List<Track>, Int, Boolean) -> Unit,
+    onMore: (Track) -> Unit,
+    openAlbum: (Album) -> Unit,
+    onPlayNext: () -> Unit = {},
+    onAddToQueue: () -> Unit = {},
+) {
     val glass = LocalGlass.current
     if (sheetHeader {
             SheetHeader(artist.name, songCount(artist.tracks.size), artist.art, round = true)
@@ -108,6 +132,7 @@ fun ArtistSheet(artist: Artist, playingId: String?, play: (List<Track>, Int, Boo
         val from = if (t.chapterIndex >= 0) "in ${t.file.title}" else t.album
         TrackRow(t, t.mediaId == playingId, { play(artist.tracks, i, false) }, { onMore(t) }, subtitle = from ?: "")
     }
+    QueueActions(onPlayNext, onAddToQueue)
 }
 
 @Composable
@@ -116,6 +141,8 @@ fun PlaylistSheet(
     tracks: List<Track?>,
     playingId: String?,
     play: (List<Track>, Int, Boolean) -> Unit,
+    onPlayNext: (List<Track>) -> Unit,
+    onAddToQueue: (List<Track>) -> Unit,
     onMore: (Track, Int) -> Unit,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
@@ -148,7 +175,7 @@ fun PlaylistSheet(
             Text("${e.title} (missing)", style = GlassType.body, color = glass.textTertiary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
         }
     }
-    Spacer(Modifier.height(Space.gap))
+    if (playable.isNotEmpty()) QueueActions({ onPlayNext(playable) }, { onAddToQueue(playable) })
     ActionRow(NovaIcon.EDIT, "Rename", { renaming = true })
     ActionRow(NovaIcon.DELETE, "Delete playlist", onDelete, danger = true)
 }
@@ -160,6 +187,8 @@ fun MixSheet(
     playingId: String?,
     positionInPlaying: () -> Long,
     onPlayFrom: (Long) -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
     onMore: (Track) -> Unit,
     onShuffle: () -> Unit,
     onSaveAsPlaylist: () -> Unit,
@@ -177,7 +206,7 @@ fun MixSheet(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(Radius.row))
-                .background(if (i == current) glass.controlFillSelected else androidx.compose.ui.graphics.Color.Transparent)
+                .playingMark(i == current, glass.accent)
                 .clickable { onPlayFrom(t.startMs) }
                 .padding(horizontal = Space.inset, vertical = Space.small),
             verticalAlignment = Alignment.CenterVertically,
@@ -192,7 +221,7 @@ fun MixSheet(
             PlainIconButton(NovaIcon.MORE, "More", { onMore(t) }, glass.textSecondary, size = 34.dp, iconSize = 18.dp)
         }
     }
-    Spacer(Modifier.height(Space.small))
+    QueueActions(onPlayNext, onAddToQueue)
     ActionRow(NovaIcon.PLAYLIST_ADD, "Save as a playlist", onSaveAsPlaylist)
     ActionRow(NovaIcon.EDIT, "Edit tracklist", onEdit)
 }

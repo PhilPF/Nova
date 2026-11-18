@@ -259,3 +259,26 @@ class SkipRuleTest {
         assertEquals(SkipAction.Seek(0), of(2_000, 200_000, -10_000, prev = false))
     }
 }
+
+class QueueSectionsTest {
+    private val album = QueueSource("a1", SourceKind.ALBUM, "Afterglow")
+    private val mix = QueueSource("m1", SourceKind.TRACKLIST, "Night Drive Mix")
+    private fun e(i: Int, s: QueueSource?) = QueueEntry(i, "id$i", "t$i", null, s)
+
+    @Test fun runsOfOneSourceAreGroups() {
+        val entries = listOf(e(0, null), e(1, mix), e(2, mix), e(3, null), e(4, album), e(5, album), e(6, album), e(7, mix))
+        val blocks = QueueSections.upcoming(entries, listOf(1, 2, 3, 4, 5, 6, 7))
+        assertEquals(listOf(mix, null, album, null), blocks.map { it.source })
+        assertEquals(listOf(2, 1, 3, 1), blocks.map { it.entries.size })
+        // A lone song keeps its source, for the panel to name it.
+        assertEquals(mix, blocks.last().entries.single().source)
+    }
+
+    @Test fun followsPlayOrder() {
+        val entries = (0..3).map { e(it, album) }
+        // Shuffled: 3 then 1 then 2 are still one album, played in that order.
+        val blocks = QueueSections.upcoming(entries, listOf(3, 1, 2))
+        assertEquals(listOf(3, 1, 2), blocks.single().entries.map { it.index })
+        assertEquals(emptyList<QueueBlock>(), QueueSections.upcoming(entries, emptyList()))
+    }
+}

@@ -21,7 +21,11 @@ Requires **Android 12 or newer** (the glass panels blur what is behind them with
 - **Player.** Album art, title and artist, a seek bar, previous, play/pause, next, shuffle and
   repeat. Swipe the art, or the mini player, sideways for the next or previous song; pull the
   player down to close it. Below it, peeking at the bottom, is what plays next: swipe up for
-  all of it, drag a song by its handle to move it. It plays in the background with the usual notification, lock-screen and headset controls
+  all of it, in the order it will play. Songs added together (an album, a playlist, an artist,
+  a video's tracklist) are grouped under a header that also removes the whole group; a long
+  video playing whole lists its songs to come first. Drag a song by its handle to move it, or
+  take it out with its ×. Album, artist, playlist and video sheets have Play next and Add to
+  queue. It plays in the background with the usual notification, lock-screen and headset controls
   (a Media3 media session).
 - **Videos.** A video plays in the art's place at its own shape (the page around it eases to
   the new size), full screen (landscape for wide videos; turning the phone also goes full

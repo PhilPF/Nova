@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -79,7 +80,7 @@ fun TrackRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.row))
-            .background(if (playing) glass.controlFillSelected else Color.Transparent)
+            .playingMark(playing, glass.accent)
             .waves(waves)
             .combinedClickable(
                 onClick = {
@@ -293,4 +294,15 @@ fun PlainIconButton(icon: NovaIcon, label: String, onClick: () -> Unit, tint: Co
 @Composable
 fun SheetTitle(text: String) {
     Text(text, style = GlassType.display.copy(fontSize = 26.sp, lineHeight = 30.sp), color = LocalGlass.current.textPrimary, modifier = Modifier.padding(horizontal = Space.inset, vertical = Space.small))
+}
+
+/**
+ * Marks the song playing in a list: a thin bar of the accent at the row's left edge (in its
+ * margin), with the title in the accent. No fill and no icon: the row keeps its shape.
+ */
+fun Modifier.playingMark(on: Boolean, color: Color): Modifier = drawBehind {
+    if (!on) return@drawBehind
+    val w = 3.dp.toPx()
+    val h = size.height * 0.46f
+    drawRoundRect(color, topLeft = Offset(0f, (size.height - h) / 2f), size = Size(w, h), cornerRadius = CornerRadius(w / 2f))
 }

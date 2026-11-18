@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import com.philpf.nova.NovaApp
 import com.philpf.nova.core.Chapters
 import com.philpf.nova.core.Library
+import com.philpf.nova.core.QueueSource
+import com.philpf.nova.core.SourceKind
 import com.philpf.nova.core.Track
 import com.philpf.nova.device.DocumentTree
 import com.philpf.nova.ui.art.NovaIcon
@@ -162,8 +164,8 @@ private fun NovaContent(app: NovaApp, connection: PlayerConnection, openPlayerTi
         shownSheet = s
     }
 
-    fun play(tracks: List<Track>, index: Int, shuffle: Boolean = false, startMs: Long = 0) {
-        connection.play(tracks, index, startMs, shuffle)
+    fun play(tracks: List<Track>, index: Int, shuffle: Boolean = false, startMs: Long = 0, source: QueueSource? = null) {
+        connection.play(tracks, index, startMs, shuffle, source)
         sheet = null
     }
 
@@ -196,7 +198,16 @@ private fun NovaContent(app: NovaApp, connection: PlayerConnection, openPlayerTi
             val mix = library.mixes.firstOrNull { it.isVideo } ?: library.mixes.firstOrNull()
             when (demo.play) {
                 "mix" -> mix?.let { connection.play(listOf(it.wholeTrack), 0, startMs = it.chapters.getOrNull(1)?.startMs?.plus(1500) ?: 0) }
-                "album" -> library.albums.firstOrNull()?.let { connection.play(it.tracks, 1) }
+                "album" -> library.albums.firstOrNull()?.let { connection.play(it.tracks, 1, source = queueSource(SourceKind.ALBUM, it.title)) }
+                // A queue of several kinds: an album, a song on its own, another album, a video's tracklist.
+                "queue" -> {
+                    val albums = library.albums
+                    albums.firstOrNull()?.let { connection.play(it.tracks, 0, source = queueSource(SourceKind.ALBUM, it.title)) }
+                    delay(500)
+                    library.songs.lastOrNull()?.let { connection.addToQueue(listOf(it)) }
+                    albums.getOrNull(1)?.let { connection.addToQueue(it.tracks, queueSource(SourceKind.ALBUM, it.title)) }
+                    mix?.let { connection.addToQueue(listOf(it.wholeTrack), queueSource(SourceKind.TRACKLIST, it.title)) }
+                }
             }
             delay(1500)
             when (demo.open) {
@@ -226,7 +237,7 @@ private fun NovaContent(app: NovaApp, connection: PlayerConnection, openPlayerTi
     }
 
     val actions = LibraryActions(
-        playTracks = { list, i -> play(list, i) },
+        playTracks = { list, i -> play(list, i, source = queueSource(SourceKind.LIST, if (query.text.isBlank()) "Songs" else "Search")) },
         openTrack = { open(Sheet.Song(it)) },
         openAlbum = { open(Sheet.AlbumOf(it.key)) },
         openArtist = { open(Sheet.ArtistOf(it.name)) },
@@ -360,6 +371,9 @@ private fun NovaContent(app: NovaApp, connection: PlayerConnection, openPlayerTi
     }
 }
 
+/** A new source for songs being queued: an id of its own, so the same album added twice is two groups. */
+fun queueSource(kind: SourceKind, title: String) = QueueSource(java.util.UUID.randomUUID().toString(), kind, title)
+
 @Composable
 private fun SheetContent(
     sheet: Sheet?,
@@ -368,26 +382,41 @@ private fun SheetContent(
     connection: PlayerConnection,
     open: (Sheet) -> Unit,
     close: () -> Unit,
-    play: (List<Track>, Int, Boolean, Long) -> Unit,
+    play: (List<Track>, Int, Boolean, Long, QueueSource?) -> Unit,
     notify: (String) -> Unit,
     pickFolder: () -> Unit,
 ) {
     val playlists by app.playlists.playlists.collectAsState()
     val playingId = connection.state.mediaId
+    /** After queuing (the call's result is ignored): closes the sheet and says so. */
+    fun queued(@Suppress("UNUSED_PARAMETER") done: Any?, message: String) {
+        close()
+        notify(message)
+    }
     when (sheet) {
         null -> Unit
         is Sheet.AlbumOf -> library.albums.firstOrNull { it.key == sheet.key }?.let { album ->
-            AlbumSheet(album, playingId, { l, i, s -> play(l, i, s, 0) }, { open(Sheet.Song(it)) })
+            AlbumSheet(
+                album, playingId, { l, i, s -> play(l, i, s, 0, queueSource(SourceKind.ALBUM, album.title)) }, { open(Sheet.Song(it)) },
+                onPlayNext = { queued(connection.playNext(album.tracks, queueSource(SourceKind.ALBUM, album.title)), "Playing next") },
+                onAddToQueue = { queued(connection.addToQueue(album.tracks, queueSource(SourceKind.ALBUM, album.title)), "Added to the queue") },
+            )
         }
         is Sheet.ArtistOf -> library.artists.firstOrNull { it.name == sheet.name }?.let { artist ->
-            ArtistSheet(artist, playingId, { l, i, s -> play(l, i, s, 0) }, { open(Sheet.Song(it)) }, { open(Sheet.AlbumOf(it.key)) })
+            ArtistSheet(
+                artist, playingId, { l, i, s -> play(l, i, s, 0, queueSource(SourceKind.ARTIST, artist.name)) }, { open(Sheet.Song(it)) }, { open(Sheet.AlbumOf(it.key)) },
+                onPlayNext = { queued(connection.playNext(artist.tracks, queueSource(SourceKind.ARTIST, artist.name)), "Playing next") },
+                onAddToQueue = { queued(connection.addToQueue(artist.tracks, queueSource(SourceKind.ARTIST, artist.name)), "Added to the queue") },
+            )
         }
         is Sheet.PlaylistOf -> playlists.firstOrNull { it.id == sheet.id }?.let { p ->
             PlaylistSheet(
                 playlist = p,
                 tracks = p.entries.map { e -> library.track(e.mediaId)?.let { t -> t.copy(title = e.title.ifEmpty { t.title }, artist = e.artist ?: t.artist) } },
                 playingId = playingId,
-                play = { l, i, s -> play(l, i, s, 0) },
+                play = { l, i, s -> play(l, i, s, 0, queueSource(SourceKind.PLAYLIST, p.name)) },
+                onPlayNext = { l -> queued(connection.playNext(l, queueSource(SourceKind.PLAYLIST, p.name)), "Playing next") },
+                onAddToQueue = { l -> queued(connection.addToQueue(l, queueSource(SourceKind.PLAYLIST, p.name)), "Added to the queue") },
                 onMore = { t, i -> open(Sheet.Song(t, p.id, i)) },
                 onRename = { app.playlists.rename(p.id, it) },
                 onDelete = {
@@ -402,10 +431,12 @@ private fun SheetContent(
                 file = f,
                 playingId = playingId,
                 positionInPlaying = { connection.position() },
-                onPlayFrom = { start -> play(listOf(f.wholeTrack), 0, false, start) },
+                onPlayFrom = { start -> play(listOf(f.wholeTrack), 0, false, start, queueSource(SourceKind.TRACKLIST, f.title)) },
+                onPlayNext = { queued(connection.playNext(listOf(f.wholeTrack), queueSource(SourceKind.TRACKLIST, f.title)), "Playing next") },
+                onAddToQueue = { queued(connection.addToQueue(listOf(f.wholeTrack), queueSource(SourceKind.TRACKLIST, f.title)), "Added to the queue") },
                 onMore = { open(Sheet.Song(it)) },
                 // The video's songs, each as a clip of it, in random order.
-                onShuffle = { play(f.chapterTracks, 0, true, 0) },
+                onShuffle = { play(f.chapterTracks, 0, true, 0, queueSource(SourceKind.TRACKLIST, f.title)) },
                 onSaveAsPlaylist = {
                     app.playlists.create(f.title, f.chapterTracks)
                     close()
@@ -422,7 +453,7 @@ private fun SheetContent(
                 track = t,
                 hasAlbum = album != null && t.chapterIndex < 0,
                 hasArtist = artist != null,
-                onPlay = { play(listOf(t), 0, false, 0) },
+                onPlay = { play(listOf(t), 0, false, 0, null) },
                 onPlayNext = {
                     connection.playNext(listOf(t))
                     close()

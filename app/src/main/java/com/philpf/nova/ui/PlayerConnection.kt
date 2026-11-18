@@ -19,6 +19,7 @@ import com.philpf.nova.core.Chapter
 import com.philpf.nova.core.ChapterNav
 import com.philpf.nova.core.Chapters
 import com.philpf.nova.core.Library
+import com.philpf.nova.core.QueueSource
 import com.philpf.nova.core.SkipAction
 import com.philpf.nova.core.SkipRule
 import com.philpf.nova.core.Track
@@ -40,6 +41,8 @@ data class PlayerState(
     val repeat: Int = Player.REPEAT_MODE_OFF,
     val queue: List<QueueItem> = emptyList(),
     val index: Int = -1,
+    /** The queue's indices after the current song, in the order they will play (shuffle and repeat included). */
+    val upcoming: List<Int> = emptyList(),
     val videoSize: VideoSize = VideoSize.UNKNOWN,
     /** Whether the current item has a video track (known before any frame is drawn). */
     val hasVideoTrack: Boolean = false,
@@ -48,7 +51,7 @@ data class PlayerState(
 }
 
 @Immutable
-data class QueueItem(val mediaId: String, val title: String, val artist: String?)
+data class QueueItem(val mediaId: String, val title: String, val artist: String?, val source: QueueSource? = null)
 
 /**
  * The app's side of the playback service: a MediaController, and its state for Compose.
@@ -93,7 +96,17 @@ class PlayerConnection(private val context: Context) {
         val c = controller ?: return
         val queue = (0 until c.mediaItemCount).map { i ->
             val item = c.getMediaItemAt(i)
-            QueueItem(item.mediaId, item.mediaMetadata.title?.toString() ?: "", item.mediaMetadata.artist?.toString())
+            QueueItem(item.mediaId, item.mediaMetadata.title?.toString() ?: "", item.mediaMetadata.artist?.toString(), MediaItems.source(item.mediaMetadata))
+        }
+        // The play order from the current song, by the timeline the player plays (once round).
+        val upcoming = mutableListOf<Int>()
+        val timeline = c.currentTimeline
+        if (!timeline.isEmpty && c.currentMediaItemIndex >= 0) {
+            var i = timeline.getNextWindowIndex(c.currentMediaItemIndex, c.repeatMode.let { if (it == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF else it }, c.shuffleModeEnabled)
+            while (i != C.INDEX_UNSET && i != c.currentMediaItemIndex && upcoming.size < timeline.windowCount) {
+                upcoming += i
+                i = timeline.getNextWindowIndex(i, if (c.repeatMode == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF else c.repeatMode, c.shuffleModeEnabled)
+            }
         }
         state = PlayerState(
             mediaId = c.currentMediaItem?.mediaId,
@@ -107,32 +120,42 @@ class PlayerConnection(private val context: Context) {
             repeat = c.repeatMode,
             queue = queue,
             index = c.currentMediaItemIndex,
+            upcoming = upcoming,
             videoSize = c.videoSize,
             hasVideoTrack = c.currentTracks.containsType(C.TRACK_TYPE_VIDEO),
         )
     }
 
-    /** Plays [tracks] from [index] (at [startMs] into it), replacing the queue. */
-    fun play(tracks: List<Track>, index: Int = 0, startMs: Long = 0, shuffle: Boolean = false) {
+    /**
+     * Plays [tracks] from [index] (at [startMs] into it), replacing the queue. [source] is what
+     * they are (an album, a playlist, …), for the next panel to show them together.
+     */
+    fun play(tracks: List<Track>, index: Int = 0, startMs: Long = 0, shuffle: Boolean = false, source: QueueSource? = null) {
         val c = controller ?: return
         if (tracks.isEmpty()) return
         c.shuffleModeEnabled = shuffle
         val start = if (shuffle && index == 0) tracks.indices.random() else index
-        c.setMediaItems(tracks.map(MediaItems::request), start.coerceIn(tracks.indices), startMs)
+        c.setMediaItems(tracks.map { MediaItems.request(it, source) }, start.coerceIn(tracks.indices), startMs)
         c.prepare()
         c.play()
     }
 
-    fun playNext(tracks: List<Track>) {
+    fun playNext(tracks: List<Track>, source: QueueSource? = null) {
         val c = controller ?: return
-        if (c.mediaItemCount == 0) return play(tracks)
-        c.addMediaItems(c.currentMediaItemIndex + 1, tracks.map(MediaItems::request))
+        if (c.mediaItemCount == 0) return play(tracks, source = source)
+        c.addMediaItems(c.currentMediaItemIndex + 1, tracks.map { MediaItems.request(it, source) })
     }
 
-    fun addToQueue(tracks: List<Track>) {
+    fun addToQueue(tracks: List<Track>, source: QueueSource? = null) {
         val c = controller ?: return
-        if (c.mediaItemCount == 0) return play(tracks)
-        c.addMediaItems(tracks.map(MediaItems::request))
+        if (c.mediaItemCount == 0) return play(tracks, source = source)
+        c.addMediaItems(tracks.map { MediaItems.request(it, source) })
+    }
+
+    /** Takes a group of songs (queue indices) out of the queue; the song playing stays. */
+    fun removeAll(indices: List<Int>) {
+        val c = controller ?: return
+        indices.filter { it != c.currentMediaItemIndex }.sortedDescending().forEach { c.removeMediaItem(it) }
     }
 
     fun togglePlay() {
@@ -226,10 +249,10 @@ class PlayerConnection(private val context: Context) {
         val c = controller ?: return
         if (c.mediaItemCount > 0) return
         val saved = ResumeStore.load(context) ?: return
-        val tracks = saved.ids.mapNotNull { library.track(it) }
-        if (tracks.isEmpty()) return
-        val index = saved.index.coerceIn(tracks.indices)
-        c.setMediaItems(tracks.map(MediaItems::request), index, saved.positionMs)
+        val items = saved.ids.indices.mapNotNull { i -> library.track(saved.ids[i])?.let { MediaItems.request(it, saved.sources.getOrNull(i)) } }
+        if (items.isEmpty()) return
+        val index = saved.index.coerceIn(items.indices)
+        c.setMediaItems(items, index, saved.positionMs)
         c.prepare()
     }
 

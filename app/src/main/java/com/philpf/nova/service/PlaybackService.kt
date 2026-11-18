@@ -125,8 +125,8 @@ class PlaybackService : MediaSessionService() {
     /** Keeps the queue, for playing again after the app was closed. */
     private fun saveQueue() {
         if (exo.mediaItemCount == 0) return
-        val ids = (0 until exo.mediaItemCount).map { exo.getMediaItemAt(it).mediaId }
-        ResumeStore.save(this, ids, exo.currentMediaItemIndex, exo.currentPosition)
+        val items = (0 until exo.mediaItemCount).map { exo.getMediaItemAt(it) }
+        ResumeStore.save(this, items.map { it.mediaId }, items.map { MediaItems.source(it.mediaMetadata) }, exo.currentMediaItemIndex, exo.currentPosition)
     }
 
     /** The current item's chapters, when it is a whole file (a clip is one song already). */
@@ -162,8 +162,10 @@ class PlaybackService : MediaSessionService() {
         val meta = MediaItems.chapterMetadata(library, item.mediaId, index)
             ?: MediaItems.resolve(library, item.mediaId)?.mediaMetadata
             ?: return
-        // The same file with new metadata: ExoPlayer updates it in place, without rebuffering.
-        exo.replaceMediaItem(exo.currentMediaItemIndex, item.buildUpon().setMediaMetadata(meta).build())
+        // The same file with new metadata (keeping where it was queued from): ExoPlayer updates
+        // it in place, without rebuffering.
+        val kept = MediaItems.withSource(meta, MediaItems.source(item.mediaMetadata))
+        exo.replaceMediaItem(exo.currentMediaItemIndex, item.buildUpon().setMediaMetadata(kept).build())
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -195,7 +197,9 @@ class PlaybackService : MediaSessionService() {
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> = scope.future {
             val library = app.library.awaitLoaded()
-            mediaItems.mapNotNull { MediaItems.resolve(library, it.mediaId, it.mediaMetadata.takeIf { m -> m.title != null }) }.toMutableList()
+            mediaItems.mapNotNull {
+                MediaItems.resolve(library, it.mediaId, it.mediaMetadata.takeIf { m -> m.title != null }, MediaItems.source(it.mediaMetadata))
+            }.toMutableList()
         }
 
         /**
@@ -208,7 +212,7 @@ class PlaybackService : MediaSessionService() {
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
             val saved = ResumeStore.load(this@PlaybackService) ?: throw UnsupportedOperationException("Nothing to resume")
             val library = app.library.awaitLoaded()
-            val items = saved.ids.mapNotNull { MediaItems.resolve(library, it) }
+            val items = saved.ids.indices.mapNotNull { i -> MediaItems.resolve(library, saved.ids[i], source = saved.sources.getOrNull(i)) }
             if (items.isEmpty()) throw UnsupportedOperationException("Nothing to resume")
             MediaSession.MediaItemsWithStartPosition(items, saved.index.coerceIn(items.indices), saved.positionMs)
         }
